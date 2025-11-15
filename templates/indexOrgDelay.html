@@ -1,0 +1,1572 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <title>PowerControl Dashboard - Sterowanie Przekaźnikami, Komputerami i Proxmox</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png?v=3">
+  <style>
+    /* ========== CSS Variables ========== */
+    :root {
+      --bg: #121212;
+      --fg: #E0E0E0;
+      --card: #1E1E1E;
+      --header: #2C2C2C;
+      --primary: #6200EE;
+      --primary-hover: #3700B3;
+      --accent: #03DAC6;
+      --muted: #555555;
+      --border: #333333;
+      --purple: #BB86FC;
+      --success: #1b5e20;
+      --warning: #37474f;
+      --error: #b71c1c;
+      --secondary: #455a64;
+      --mid: #263238;
+      --online: #4caf50;
+      --offline: #f44336;
+      --unknown: #9e9e9e;
+      
+      /* Spacing */
+      --spacing-xs: 4px;
+      --spacing-sm: 8px;
+      --spacing-md: 12px;
+      --spacing-lg: 16px;
+      --spacing-xl: 20px;
+      --spacing-xxl: 40px;
+      
+      /* Border radius */
+      --radius-sm: 4px;
+      --radius-md: 6px;
+      --radius-lg: 8px;
+      --radius-pill: 999px;
+      
+      /* Shadows */
+      --shadow-light: 0 2px 4px rgba(0, 0, 0, 0.1);
+      --shadow-medium: 0 4px 8px rgba(0, 0, 0, 0.2);
+      --shadow-heavy: 0 8px 16px rgba(0, 0, 0, 0.3);
+      --shadow-toast: 0 4px 16px rgba(0, 0, 0, 0.4);
+      
+      /* Transitions */
+      --transition-fast: 0.15s ease;
+      --transition-normal: 0.25s ease;
+      --transition-slow: 0.3s ease;
+    }
+
+    /* ========== Base Styles ========== */
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      margin: var(--spacing-xl);
+      line-height: 1.5;
+      font-size: 14px;
+    }
+
+    /* ========== Typography ========== */
+    h1 {
+      text-align: center;
+      color: var(--purple);
+      margin: var(--spacing-xxl) 0 var(--spacing-xl) 0;
+      font-size: 1.8rem;
+      font-weight: 600;
+      letter-spacing: -0.5px;
+    }
+
+    h1:first-child {
+      margin-top: 0;
+    }
+
+    /* ========== Layout Components ========== */
+    .table-container {
+      overflow-x: auto;
+      margin: var(--spacing-xl) 0;
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-medium);
+      background: var(--card);
+    }
+
+    .center {
+      text-align: center;
+      margin-top: var(--spacing-xl);
+    }
+
+    .manual-section {
+      margin-top: var(--spacing-xxl);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+
+    /* ========== Performance Warning ========== */
+    .performance-warning {
+      background: var(--warning);
+      color: #ffffff;
+      padding: var(--spacing-sm) var(--spacing-md);
+      border-radius: var(--radius-md);
+      margin: var(--spacing-md) 0;
+      text-align: center;
+      font-size: 0.85rem;
+      display: none; /* Hidden by default, shown when multiple tabs detected */
+    }
+
+    .performance-warning.show {
+      display: block;
+    }
+
+    .visibility-status {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      background: var(--mid);
+      color: var(--fg);
+      padding: var(--spacing-xs) var(--spacing-sm);
+      border-radius: var(--radius-sm);
+      font-size: 0.75rem;
+      z-index: 1001;
+      display: none;
+    }
+
+    .visibility-status.paused {
+      background: var(--warning);
+      color: #ffffff;
+      display: block;
+    }
+
+    /* ========== Tables ========== */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--card);
+      min-width: 600px;
+    }
+
+    th, td {
+      border: 1px solid var(--border);
+      padding: var(--spacing-md);
+      text-align: center;
+      vertical-align: middle;
+    }
+
+    th {
+      background: var(--header);
+      color: var(--purple);
+      font-weight: 600;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    td {
+      background: var(--card);
+      transition: background-color var(--transition-fast);
+    }
+
+    tr:hover td {
+      background: color-mix(in srgb, var(--card) 90%, var(--accent) 10%);
+    }
+
+    /* ========== Buttons ========== */
+    button {
+      padding: 10px 15px;
+      margin: var(--spacing-xs);
+      font-size: 14px;
+      font-weight: 500;
+      color: #ffffff;
+      background: var(--primary);
+      border: none;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all var(--transition-slow);
+      position: relative;
+      overflow: hidden;
+    }
+
+    button:hover:not(:disabled) {
+      background: var(--primary-hover);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-light);
+    }
+
+    button:active:not(:disabled) {
+      background: var(--accent);
+      color: #000000;
+      transform: translateY(0);
+    }
+
+    button:disabled {
+      background: var(--muted);
+      cursor: not-allowed;
+      opacity: 0.6;
+      transform: none;
+      box-shadow: none;
+    }
+
+    button.secondary {
+      background: var(--secondary);
+    }
+
+    button.secondary:hover:not(:disabled) {
+      background: color-mix(in srgb, var(--secondary) 80%, white 20%);
+    }
+
+    button.ghost {
+      background: transparent;
+      color: var(--fg);
+      border: 1px solid var(--border);
+    }
+
+    button.ghost:hover:not(:disabled) {
+      background: var(--border);
+      border-color: var(--accent);
+    }
+
+    button.small {
+      font-size: 12px;
+      padding: var(--spacing-xs) var(--spacing-sm);
+    }
+
+    /* ========== Specialized Buttons ========== */
+    .notify-btn {
+      padding: var(--spacing-xs) 10px;
+      font-size: 12px;
+      border-radius: var(--radius-md);
+      font-weight: 500;
+      transition: all var(--transition-normal);
+    }
+
+    .notify-on {
+      background: #00695c;
+      color: #ffffff;
+    }
+
+    .notify-on:hover:not(:disabled) {
+      background: #004d40;
+    }
+
+    .notify-off {
+      background: #424242;
+      color: #ffffff;
+    }
+
+    .notify-off:hover:not(:disabled) {
+      background: #616161;
+    }
+
+    .ping-btn {
+      background: var(--muted);
+      border: none;
+      border-radius: var(--radius-sm);
+      padding: var(--spacing-xs);
+      font-size: 11px;
+      cursor: pointer;
+      color: var(--fg);
+      transition: all var(--transition-fast);
+      min-width: 60px;
+    }
+
+    .ping-btn.pinging {
+      background: var(--warning);
+      color: #ffffff;
+    }
+
+    .ping-btn.online {
+      background: var(--online);
+      color: #ffffff;
+    }
+
+    .ping-btn.offline {
+      background: var(--offline);
+      color: #ffffff;
+    }
+
+    /* ========== Badges ========== */
+    .badge {
+      display: inline-block;
+      border-radius: var(--radius-pill);
+      padding: 0.25rem 0.6rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .badge.on {
+      background: var(--success);
+      color: #ffffff;
+    }
+
+    .badge.off {
+      background: #424242;
+      color: #ffffff;
+    }
+
+    .badge.running {
+      background: var(--success);
+      color: #ffffff;
+    }
+
+    .badge.stopped {
+      background: #424242;
+      color: #ffffff;
+    }
+
+    .badge.paused {
+      background: var(--warning);
+      color: #ffffff;
+    }
+
+    .badge.error {
+      background: var(--error);
+      color: #ffffff;
+    }
+
+    .badge.online {
+      background: var(--online);
+      color: #ffffff;
+    }
+
+    .badge.offline {
+      background: var(--error);
+      color: #ffffff;
+    }
+
+    .badge.unknown {
+      background: var(--unknown);
+      color: #ffffff;
+    }
+
+    /* ========== Status Indicators ========== */
+    .status-cell {
+      position: relative;
+    }
+
+    .status-indicator {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: var(--spacing-sm);
+    }
+
+    .status-indicator.on {
+      background: var(--success);
+      box-shadow: 0 0 4px var(--success);
+    }
+
+    .status-indicator.off {
+      background: #424242;
+    }
+
+    .status-indicator.online {
+      background: var(--online);
+      box-shadow: 0 0 4px var(--online);
+      animation: pulse 2s infinite;
+    }
+
+    .status-indicator.offline {
+      background: var(--error);
+    }
+
+    .status-indicator.unknown {
+      background: var(--unknown);
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    /* ========== IP Display ========== */
+    .ip-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--spacing-xs);
+      justify-content: center;
+      align-items: center;
+    }
+
+    .ip-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--spacing-xs);
+      background: var(--mid);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-pill);
+      padding: var(--spacing-xs) var(--spacing-sm);
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+      font-size: 0.85rem;
+      color: var(--accent);
+    }
+
+    .ip-btn {
+      background: transparent;
+      border: 1px solid var(--secondary);
+      border-radius: var(--radius-sm);
+      padding: 2px var(--spacing-xs);
+      font-size: 11px;
+      cursor: pointer;
+      color: var(--fg);
+      transition: all var(--transition-fast);
+    }
+
+    .ip-btn:hover:not(:disabled) {
+      background: var(--secondary);
+      color: #ffffff;
+    }
+
+    /* ========== Form Elements ========== */
+    textarea {
+      background: var(--card);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      padding: var(--spacing-md);
+      border-radius: var(--radius-md);
+      width: 100%;
+      max-width: 600px;
+      font-size: 14px;
+      resize: vertical;
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+      line-height: 1.4;
+      transition: border-color var(--transition-normal);
+    }
+
+    textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px rgba(98, 0, 238, 0.2);
+    }
+
+    /* ========== Toast Notifications ========== */
+    #toast {
+      position: fixed;
+      right: var(--spacing-lg);
+      bottom: var(--spacing-lg);
+      background: var(--mid);
+      color: #ffffff;
+      padding: var(--spacing-md) var(--spacing-lg);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-toast);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--transition-normal);
+      z-index: 1000;
+      max-width: 300px;
+      word-wrap: break-word;
+    }
+
+    #toast.show {
+      opacity: 1;
+    }
+
+    /* ========== Loading States ========== */
+    .loading {
+      position: relative;
+      color: transparent;
+    }
+
+    .loading::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 16px;
+      height: 16px;
+      margin: -8px 0 0 -8px;
+      border: 2px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* ========== Responsive Design ========== */
+    @media (max-width: 768px) {
+      body {
+        margin: 10px;
+        font-size: 13px;
+      }
+      
+      h1 {
+        font-size: 1.5em;
+        margin: var(--spacing-xl) 0 var(--spacing-lg) 0;
+      }
+      
+      th, td {
+        padding: var(--spacing-sm);
+        font-size: 12px;
+      }
+      
+      button {
+        padding: var(--spacing-sm) 10px;
+        font-size: 12px;
+        margin: 2px;
+      }
+      
+      table {
+        min-width: unset;
+      }
+      
+      textarea {
+        font-size: 12px;
+        padding: var(--spacing-sm);
+      }
+      
+      .table-container {
+        margin: var(--spacing-md) 0;
+      }
+    }
+
+    @media (max-width: 480px) {
+      body {
+        margin: var(--spacing-xs);
+      }
+      
+      h1 {
+        font-size: 1.2em;
+      }
+      
+      /* Mobile table transformation */
+      table, thead, tbody, th, td, tr {
+        display: block;
+      }
+      
+      thead tr {
+        position: absolute;
+        top: -9999px;
+        left: -9999px;
+      }
+      
+      tr {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        margin-bottom: var(--spacing-md);
+        padding: var(--spacing-sm);
+        background: var(--card);
+      }
+      
+      td {
+        border: none;
+        border-bottom: 1px solid var(--border);
+        position: relative;
+        padding-left: 50%;
+        text-align: right;
+        padding-top: var(--spacing-sm);
+        padding-bottom: var(--spacing-sm);
+      }
+      
+      td:last-child {
+        border-bottom: none;
+      }
+      
+      td::before {
+        content: attr(data-label) ": ";
+        position: absolute;
+        left: var(--spacing-sm);
+        width: 45%;
+        padding-right: 10px;
+        white-space: nowrap;
+        font-weight: bold;
+        text-align: left;
+        color: var(--purple);
+      }
+      
+      .center {
+        margin-top: 10px;
+      }
+      
+      textarea {
+        font-size: 11px;
+        padding: var(--spacing-xs);
+      }
+      
+      .ip-list {
+        justify-content: flex-end;
+      }
+      
+      button {
+        padding: var(--spacing-xs) var(--spacing-sm);
+        font-size: 11px;
+        margin: 1px;
+      }
+    }
+
+    /* ========== Accessibility ========== */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    /* ========== Focus Styles ========== */
+    button:focus-visible,
+    textarea:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    /* ========== Dark Mode Enhancements ========== */
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f5f5f5;
+        --fg: #212121;
+        --card: #ffffff;
+        --header: #f0f0f0;
+        --border: #e0e0e0;
+        --muted: #757575;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- ========== PERFORMANCE WARNING ========== -->
+  <div id="performanceWarning" class="performance-warning">
+    ⚠️ Wykryto wiele otwartych kart - może to obciążyć sieć. Zalecamy używanie tylko jednej karty.
+  </div>
+
+  <!-- ========== VISIBILITY STATUS ========== -->
+  <div id="visibilityStatus" class="visibility-status">
+    ⏸️ Polling wstrzymany (karta nieaktywna)
+  </div>
+
+  <!-- ========== RELAY CONTROL SECTION ========== -->
+  <h1>🔌 Sterowanie Przekaźnikami</h1>
+  <div class="table-container">
+    <table id="relaysTable">
+      <thead>
+        <tr>
+          <th data-label="Przekaźnik">Przekaźnik</th>
+          <th data-label="Status">Status</th>
+          <th data-label="Powiadomienia">Powiadomienia</th>
+          <th data-label="Akcje">Akcje</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for relay in relay_status %}
+        <tr id="relay-row-{{ relay.id }}">
+          <td data-label="Przekaźnik">
+            <strong>Przekaźnik {{ relay.id }}</strong>
+          </td>
+          <td data-label="Status" class="status-cell">
+            {% if relay.on %}
+              <span class="status-indicator on"></span>
+              <span class="badge on">Włączony ⚡</span>
+            {% else %}
+              <span class="status-indicator off"></span>
+              <span class="badge off">Wyłączony</span>
+            {% endif %}
+          </td>
+          <td data-label="Powiadomienia">
+            <button 
+              id="notify-btn-{{ relay.id }}" 
+              class="notify-btn small notify-off" 
+              onclick="toggleNotify('{{ relay.id }}', this)" 
+              title="Zarządzaj powiadomieniami"
+              aria-label="Przełącz powiadomienia dla przekaźnika {{ relay.id }}">
+              Powiadomienia: OFF
+            </button>
+          </td>
+          <td data-label="Akcje">
+            <button 
+              onclick="controlRelay('{{ relay.id }}', 'on')" 
+              id="btn-on-{{ relay.id }}"
+              aria-label="Włącz przekaźnik {{ relay.id }}">
+              ▶️ Włącz
+            </button>
+            <button 
+              onclick="controlRelay('{{ relay.id }}', 'off')" 
+              id="btn-off-{{ relay.id }}"
+              class="secondary"
+              aria-label="Wyłącz przekaźnik {{ relay.id }}">
+              ⏹️ Wyłącz
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="center">
+    <button onclick="controlAllRelays('allon')" class="large">
+      🚀 Włącz Wszystkie
+    </button>
+    <button onclick="controlAllRelays('alloff')" class="large secondary">
+      🛑 Wyłącz Wszystkie
+    </button>
+  </div>
+
+  <!-- ========== UNIFIED HOST MANAGEMENT SECTION ========== -->
+  <h1>💻 Zarządzanie Hostami</h1>
+  <div class="table-container">
+    <table id="hostsTable">
+      <thead>
+        <tr>
+          <th data-label="Host">Host</th>
+          <th data-label="Adres IP">Adres IP</th>
+          <th data-label="MAC">MAC</th>
+          <th data-label="Status">Status</th>
+          <th data-label="Akcje">Akcje</th>
+        </tr>
+      </thead>
+      <tbody id="hostsBody">
+        <tr>
+          <td colspan="5" class="loading">Ładowanie hostów...</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ========== PROXMOX VM MANAGEMENT SECTION ========== -->
+  <h1>🖥️ VMs Proxmox</h1>
+  <div class="table-container">
+    <table id="vmsTable">
+      <thead>
+        <tr>
+          <th data-label="Węzeł">Węzeł</th>
+          <th data-label="Typ">Typ</th>
+          <th data-label="VMID">VMID</th>
+          <th data-label="Nazwa">Nazwa</th>
+          <th data-label="Status">Status</th>
+          <th data-label="Uptime">Uptime</th>
+          <th data-label="Adresy IP">Adresy IP</th>
+          <th data-label="Akcje">Akcje</th>
+        </tr>
+      </thead>
+      <tbody id="vmsBody">
+        <tr>
+          <td colspan="8" class="loading">Ładowanie maszyn wirtualnych...</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ========== MANUAL SECTION ========== -->
+  <div class="manual-section">
+    <h1>📋 Konfiguracja Przekaźników (Opis)</h1>
+    <textarea 
+      id="userMessage" 
+      name="manual" 
+      rows="8" 
+      readonly
+      title="Konfiguracja mapowania przekaźników (opsi)">Przekaźnik 1 - SW05 (Video)
+Przekaźnik 2 - SW02(Prox01)
+Przekaźnik 3 - SW06(PwrDeck)
+Przekaźnik 4 - SW01(Laptops)
+Przekaźnik 5 - auto(Switch)
+Przekaźnik 6 - SW04(PC)
+Przekaźnik 7 - ----()
+Przekaźnik 8 - SW03(Prox02)</textarea>
+  </div>
+
+  <!-- ========== TOAST NOTIFICATION ========== -->
+  <div id="toast" role="alert" aria-live="polite"></div>
+
+  <!-- ========== JAVASCRIPT ========== -->
+  <script>
+    'use strict';
+
+    // ========== CONFIGURATION ========== (OPTIMIZED FOR PERFORMANCE)
+    const CONFIG = {
+      POLL_INTERVAL_RELAYS: 5000,          // 2s → 5s (zmniejszenie obciążenia)
+      POLL_INTERVAL_NOTIFICATIONS: 30000,  // 5s → 30s (notifications rzadziej)
+      POLL_INTERVAL_VMS: 10000,            // 5s → 10s (VM status rzadziej) 
+      POLL_INTERVAL_HOSTS: 60000,          // 30s → 60s (lista hostów rzadziej)
+      PING_INTERVAL_HOSTS: 300000,         // 60s → 300s (5 minut - ZNACZNE ZMNIEJSZENIE!)
+      TOAST_DURATION: 3000,
+      VM_REFRESH_DELAY: 1200,
+      
+      // Tab visibility intervals (gdy karta aktywna)
+      ACTIVE_MULTIPLIER: 1,
+      // Tab visibility intervals (gdy karta nieaktywna - dramatycznie rzadziej)
+      INACTIVE_MULTIPLIER: 5  // 5x rzadziej gdy nieaktywna
+    };
+
+    // ========== TAB VISIBILITY DETECTION ==========
+    const VisibilityManager = {
+      isVisible: true,
+      intervalIds: {},
+      
+      init() {
+        document.addEventListener('visibilitychange', this.handleVisibilityChange.bind(this));
+        
+        // Performance Storage API dla wykrywania wielu kart
+        this.detectMultipleTabs();
+        
+        this.isVisible = !document.hidden;
+        this.updateVisibilityUI();
+      },
+      
+      handleVisibilityChange() {
+        const wasVisible = this.isVisible;
+        this.isVisible = !document.hidden;
+        
+        if (this.isVisible !== wasVisible) {
+          console.log(`Tab visibility changed: ${this.isVisible ? 'visible' : 'hidden'}`);
+          
+          if (this.isVisible) {
+            this.resumePolling();
+            Utils.showToast('▶️ Polling wznowiony - karta aktywna');
+          } else {
+            this.pausePolling();
+            Utils.showToast('⏸️ Polling wstrzymany - oszczędzanie zasobów');
+          }
+          
+          this.updateVisibilityUI();
+        }
+      },
+      
+      pausePolling() {
+        // Zatrzymaj wszystkie timery
+        Object.values(this.intervalIds).forEach(id => {
+          if (id) clearInterval(id);
+        });
+        
+        // Ustaw znacznie rzadsze interwały dla kart w tle
+        this.intervalIds.relayPoll = setInterval(
+          RelayController.pollStatus, 
+          CONFIG.POLL_INTERVAL_RELAYS * CONFIG.INACTIVE_MULTIPLIER
+        );
+        
+        this.intervalIds.hostsList = setInterval(
+          HostController.load.bind(HostController), 
+          CONFIG.POLL_INTERVAL_HOSTS * CONFIG.INACTIVE_MULTIPLIER
+        );
+        
+        // Wyłącz zupełnie ping i VM polling dla nieaktywnych kart
+        // (ping będzie działać tylko z aktywnych kart)
+      },
+      
+      resumePolling() {
+        // Zatrzymaj stare timery
+        Object.values(this.intervalIds).forEach(id => {
+          if (id) clearInterval(id);
+        });
+        
+        // Przywróć normalne interwały
+        this.intervalIds.relayPoll = setInterval(RelayController.pollStatus, CONFIG.POLL_INTERVAL_RELAYS);
+        this.intervalIds.notificationsFetch = setInterval(NotificationController.fetchStates, CONFIG.POLL_INTERVAL_NOTIFICATIONS);
+        this.intervalIds.hostsList = setInterval(HostController.load.bind(HostController), CONFIG.POLL_INTERVAL_HOSTS);
+        this.intervalIds.hostsAutoPing = setInterval(HostController.autoPingAll.bind(HostController), CONFIG.PING_INTERVAL_HOSTS);
+        this.intervalIds.vmsList = setInterval(VMController.load.bind(VMController), CONFIG.POLL_INTERVAL_VMS);
+      },
+      
+      updateVisibilityUI() {
+        const statusEl = document.getElementById('visibilityStatus');
+        if (statusEl) {
+          statusEl.className = this.isVisible ? 'visibility-status' : 'visibility-status paused';
+        }
+      },
+      
+      detectMultipleTabs() {
+        // Użyj localStorage do wykrycia wielu otwartych kart
+        try {
+          const tabId = Date.now() + '-' + Math.random();
+          const tabsKey = 'powercontrol-active-tabs';
+          
+          // Rejestruj tę kartę
+          const existingTabs = JSON.parse(localStorage.getItem(tabsKey) || '[]');
+          const activeTabs = [...existingTabs, tabId];
+          localStorage.setItem(tabsKey, JSON.stringify(activeTabs));
+          
+          // Sprawdź co 5 sekund czy są inne aktywne karty
+          setInterval(() => {
+            try {
+              const current = JSON.parse(localStorage.getItem(tabsKey) || '[]');
+              const warningEl = document.getElementById('performanceWarning');
+              
+              if (current.length > 1) {
+                warningEl?.classList.add('show');
+              } else {
+                warningEl?.classList.remove('show');
+              }
+            } catch (e) {
+              console.debug('Multiple tabs detection error:', e);
+            }
+          }, 5000);
+          
+          // Cleanup przy zamknięciu
+          window.addEventListener('beforeunload', () => {
+            try {
+              const current = JSON.parse(localStorage.getItem(tabsKey) || '[]');
+              const filtered = current.filter(id => id !== tabId);
+              localStorage.setItem(tabsKey, JSON.stringify(filtered));
+            } catch (e) {
+              console.debug('Tab cleanup error:', e);
+            }
+          });
+          
+        } catch (e) {
+          console.debug('Multiple tabs detection not available:', e);
+        }
+      }
+    };
+
+    // ========== UTILITIES ==========
+    const Utils = {
+      showToast(message) {
+        const toast = document.getElementById('toast');
+        if (!toast) return;
+        
+        toast.textContent = message;
+        toast.classList.add('show');
+        
+        clearTimeout(Utils.showToast._timer);
+        Utils.showToast._timer = setTimeout(() => {
+          toast.classList.remove('show');
+        }, CONFIG.TOAST_DURATION);
+      },
+
+      formatUptime(seconds) {
+        if (!seconds || seconds <= 0) return '—';
+        
+        let sec = Math.floor(seconds);
+        const days = Math.floor(sec / 86400);
+        sec %= 86400;
+        const hours = Math.floor(sec / 3600);
+        sec %= 3600;
+        const minutes = Math.floor(sec / 60);
+        
+        const parts = [];
+        if (days) parts.push(`${days}d`);
+        if (hours) parts.push(`${hours}h`);
+        if (minutes) parts.push(`${minutes}m`);
+        
+        return parts.join(' ') || '0m';
+      },
+
+      async copyToClipboard(text) {
+        try {
+          await navigator.clipboard.writeText(text);
+          Utils.showToast(`Skopiowano: ${text}`);
+        } catch (error) {
+          console.warn('Clipboard copy failed:', error);
+          Utils.showToast('Nie udało się skopiować do schowka');
+        }
+      },
+
+      async fetchJSON(url, options = {}) {
+        const response = await fetch(url, {
+          headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+          },
+          ...options
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        return response.json();
+      },
+
+      debounce(func, delay) {
+        let timeoutId;
+        return (...args) => {
+          clearTimeout(timeoutId);
+          timeoutId = setTimeout(() => func.apply(this, args), delay);
+        };
+      },
+
+      setElementsDisabled(elements, disabled) {
+        elements.forEach(el => {
+          if (el) el.disabled = disabled;
+        });
+      }
+    };
+
+    // ========== RELAY MANAGEMENT ==========
+    const RelayController = {
+      updateUI(relayId, isOn) {
+        const row = document.getElementById(`relay-row-${relayId}`);
+        if (!row) return;
+
+        const statusCell = row.querySelector('.status-cell');
+        if (statusCell) {
+          const indicator = isOn 
+            ? '<span class="status-indicator on"></span><span class="badge on">Włączony ⚡</span>'
+            : '<span class="status-indicator off"></span><span class="badge off">Wyłączony</span>';
+          statusCell.innerHTML = indicator;
+        }
+
+        // Update button states
+        const btnOn = document.getElementById(`btn-on-${relayId}`);
+        const btnOff = document.getElementById(`btn-off-${relayId}`);
+        
+        if (btnOn) btnOn.disabled = isOn;
+        if (btnOff) btnOff.disabled = !isOn;
+      },
+
+      async pollStatus() {
+        try {
+          const data = await Utils.fetchJSON('/debug/relays');
+          if (data?.success && Array.isArray(data.relays)) {
+            data.relays.forEach(relay => {
+              RelayController.updateUI(relay.id, !!relay.on);
+            });
+          }
+        } catch (error) {
+          console.debug('Relay polling failed:', error);
+        }
+      },
+
+      async control(relayId, action) {
+        const btnOn = document.getElementById(`btn-on-${relayId}`);
+        const btnOff = document.getElementById(`btn-off-${relayId}`);
+        
+        Utils.setElementsDisabled([btnOn, btnOff], true);
+        
+        try {
+          const data = await Utils.fetchJSON(`/relay/${relayId}/${action}`, {
+            method: 'POST'
+          });
+          
+          if (data?.success) {
+            Utils.showToast(`Przekaźnik ${relayId}: ${action === 'on' ? 'włączony' : 'wyłączony'}`);
+          } else {
+            throw new Error(data?.error || 'Nieznany błąd');
+          }
+        } catch (error) {
+          console.error('Relay control error:', error);
+          alert(`Błąd sterowania przekaźnikiem: ${error.message}`);
+        } finally {
+          Utils.setElementsDisabled([btnOn, btnOff], false);
+        }
+      },
+
+      async controlAll(action) {
+        try {
+          const data = await Utils.fetchJSON(`/${action}`, { method: 'POST' });
+          
+          if (data?.success) {
+            const actionText = action === 'allon' ? 'włączenie' : 'wyłączenie';
+            Utils.showToast(`Wysłano polecenie: ${actionText} wszystkich przekaźników`);
+            setTimeout(RelayController.pollStatus, 200);
+          } else {
+            throw new Error(data?.error || 'Nieznany błąd');
+          }
+        } catch (error) {
+          console.error('Relay control all error:', error);
+          alert(`Błąd sterowania wszystkimi przekaźnikami: ${error.message}`);
+        }
+      }
+    };
+
+    // ========== NOTIFICATION MANAGEMENT ==========
+    const NotificationController = {
+      applyButtonState(button, enabled) {
+        if (!button) return;
+        
+        if (enabled) {
+          button.classList.remove('notify-off');
+          button.classList.add('notify-on');
+          button.textContent = 'Powiadomienia: ON';
+          button.title = 'Powiadomienia włączone. Kliknij aby wyłączyć.';
+        } else {
+          button.classList.remove('notify-on');
+          button.classList.add('notify-off');
+          button.textContent = 'Powiadomienia: OFF';
+          button.title = 'Powiadomienia wyłączone. Kliknij aby włączyć.';
+        }
+        button.disabled = false;
+      },
+
+      async fetchStates() {
+        try {
+          const data = await Utils.fetchJSON('/debug/relay_notifications');
+          if (data?.success && data.notifications) {
+            Object.entries(data.notifications).forEach(([relayId, enabled]) => {
+              const button = document.getElementById(`notify-btn-${relayId}`);
+              NotificationController.applyButtonState(button, !!enabled);
+            });
+          }
+        } catch (error) {
+          console.debug('Notification states fetch failed:', error);
+        }
+      },
+
+      async toggle(relayId, button) {
+        button.disabled = true;
+        const currentlyEnabled = button.classList.contains('notify-on');
+        const newState = !currentlyEnabled;
+        
+        try {
+          const data = await Utils.fetchJSON(`/relay/${relayId}/notify`, {
+            method: 'POST',
+            body: JSON.stringify({ enabled: newState })
+          });
+          
+          if (data?.success) {
+            NotificationController.applyButtonState(button, !!data.enabled);
+            const stateText = data.enabled ? 'włączone' : 'wyłączone';
+            Utils.showToast(`Powiadomienia dla przekaźnika ${relayId}: ${stateText}`);
+          } else {
+            throw new Error(data?.error || data?.message || 'Nieznany błąd');
+          }
+        } catch (error) {
+          console.error('Notification toggle error:', error);
+          alert(`Błąd zmiany powiadomień: ${error.message}`);
+          NotificationController.applyButtonState(button, currentlyEnabled);
+        }
+      }
+    };
+
+    // ========== UNIFIED HOST MANAGEMENT ==========
+    const HostController = {
+      hosts: new Map(),
+      pingStates: new Map(),
+
+      renderStatusBadge(status) {
+        const statusClass = status === 'online' ? 'online' : 
+                           status === 'offline' ? 'offline' : 'unknown';
+        const statusText = status === 'online' ? 'Online' : 
+                          status === 'offline' ? 'Offline' : 'Nieznany';
+        return `
+          <span class="status-indicator ${statusClass}"></span>
+          <span class="badge ${statusClass}">${statusText}</span>
+        `;
+      },
+
+      renderPingButton(hostId, status) {
+        const btnClass = status === 'pinging' ? 'pinging' :
+                        status === 'online' ? 'online' :
+                        status === 'offline' ? 'offline' : '';
+        const btnText = status === 'pinging' ? '⏳' :
+                       status === 'online' ? '✅' :
+                       status === 'offline' ? '❌' : '❓';
+        
+        return `<button class="ping-btn ${btnClass}" onclick="HostController.ping('${hostId}', this)" title="Ping host (ostatni auto-ping: 5min)">${btnText}</button>`;
+      },
+
+      async load() {
+        const tbody = document.getElementById('hostsBody');
+        if (!tbody) return;
+        
+        try {
+          const data = await Utils.fetchJSON('/hosts/list');
+          
+          if (!data.success) {
+            tbody.innerHTML = `<tr><td colspan="5">❌ Błąd: ${data.error || 'brak szczegółów'}</td></tr>`;
+            return;
+          }
+          
+          const hosts = data.hosts || [];
+          
+          if (!hosts.length) {
+            tbody.innerHTML = '<tr><td colspan="5">📭 Brak skonfigurowanych hostów</td></tr>';
+            return;
+          }
+          
+          tbody.innerHTML = '';
+          hosts.forEach(host => {
+            const row = document.createElement('tr');
+            const hostId = host.hostname || host.name;
+            const pingStatus = this.pingStates.get(hostId) || 'unknown';
+            const overallStatus = host.status || pingStatus;
+            
+            row.innerHTML = `
+              <td data-label="Host"><strong>${hostId}</strong></td>
+              <td data-label="Adres IP"><code>${host.ip}</code></td>
+              <td data-label="MAC"><code>${host.mac || '—'}</code></td>
+              <td data-label="Status" class="status-cell">
+                ${this.renderStatusBadge(overallStatus)}
+                ${this.renderPingButton(hostId, pingStatus)}
+              </td>
+              <td data-label="Akcje">
+                <button onclick="HostController.wake('${hostId}')" title="Wake on LAN">
+                  🌅 WOL
+                </button>
+                <button onclick="HostController.shutdown('${hostId}')" class="secondary" title="Shutdown via SSH">
+                  🛑 Shutdown
+                </button>
+                <button onclick="HostController.reboot('${hostId}')" class="secondary" title="Restart via SSH">
+                  🔄 Restart
+                </button>
+              </td>
+            `;
+            tbody.appendChild(row);
+            
+            // Store host data
+            this.hosts.set(hostId, host);
+          });
+        } catch (error) {
+          console.error('Host loading error:', error);
+          tbody.innerHTML = '<tr><td colspan="5">❌ Błąd połączenia z serwerem</td></tr>';
+        }
+      },
+
+      async wake(hostId) {
+        try {
+          const data = await Utils.fetchJSON(`/hosts/${hostId}/wake`, {
+            method: 'POST'
+          });
+          
+          if (data?.success) {
+            Utils.showToast(`🌅 Wysłano magiczny pakiet WOL do ${hostId}`);
+          } else {
+            throw new Error(data?.error || 'Nieznany błąd');
+          }
+        } catch (error) {
+          console.error('Host wake error:', error);
+          alert(`Błąd uruchamiania hosta: ${error.message}`);
+        }
+      },
+
+      async shutdown(hostId) {
+        if (!confirm(`❓ Czy na pewno wyłączyć host ${hostId}?`)) return;
+        
+        try {
+          const data = await Utils.fetchJSON(`/hosts/${hostId}/shutdown`, {
+            method: 'POST'
+          });
+          
+          if (data?.success) {
+            Utils.showToast(`🛑 Wysłano polecenie shutdown do ${hostId}`);
+          } else {
+            throw new Error(data?.error || 'Nieznany błąd');
+          }
+        } catch (error) {
+          console.error('Host shutdown error:', error);
+          alert(`Błąd wyłączania hosta: ${error.message}`);
+        }
+      },
+
+      async reboot(hostId) {
+        if (!confirm(`❓ Czy na pewno zrestartować host ${hostId}?`)) return;
+        
+        try {
+          const data = await Utils.fetchJSON(`/hosts/${hostId}/reboot`, {
+            method: 'POST'
+          });
+          
+          if (data?.success) {
+            Utils.showToast(`🔄 Wysłano polecenie restart do ${hostId}`);
+          } else {
+            throw new Error(data?.error || 'Nieznany błąd');
+          }
+        } catch (error) {
+          console.error('Host reboot error:', error);
+          alert(`Błąd restartowania hosta: ${error.message}`);
+        }
+      },
+
+      async ping(hostId, button) {
+        if (!hostId || !button) return;
+        
+        // Update button to show pinging state
+        this.pingStates.set(hostId, 'pinging');
+        button.className = 'ping-btn pinging';
+        button.innerHTML = '⏳';
+        button.disabled = true;
+        
+        try {
+          const data = await Utils.fetchJSON(`/hosts/${hostId}/ping`, {
+            method: 'POST'
+          });
+          
+          const status = data?.success && data?.reachable ? 'online' : 'offline';
+          this.pingStates.set(hostId, status);
+          
+          // Update button appearance
+          const btnClass = status === 'online' ? 'online' : 'offline';
+          const btnText = status === 'online' ? '✅' : '❌';
+          button.className = `ping-btn ${btnClass}`;
+          button.innerHTML = btnText;
+          
+          // Update status indicator in the same row
+          const statusCell = button.closest('tr')?.querySelector('.status-cell');
+          if (statusCell) {
+            const badge = statusCell.querySelector('.badge');
+            const indicator = statusCell.querySelector('.status-indicator');
+            if (badge && indicator) {
+              const statusText = status === 'online' ? 'Online' : 'Offline';
+              badge.className = `badge ${status}`;
+              badge.textContent = statusText;
+              indicator.className = `status-indicator ${status}`;
+            }
+          }
+          
+          const statusText = status === 'online' ? 'dostępny' : 'niedostępny';
+          Utils.showToast(`🔍 ${hostId} jest ${statusText}`);
+          
+        } catch (error) {
+          console.error('Host ping error:', error);
+          this.pingStates.set(hostId, 'offline');
+          button.className = 'ping-btn offline';
+          button.innerHTML = '❌';
+          Utils.showToast(`❌ Błąd ping ${hostId}: ${error.message}`);
+        } finally {
+          button.disabled = false;
+        }
+      },
+
+      async autoPingAll() {
+        // Tylko gdy karta jest aktywna lub wszystkie karty nieaktywne
+        if (!VisibilityManager.isVisible) {
+          console.debug('Skipping auto-ping - tab not visible');
+          return;
+        }
+        
+        console.log('🔍 Auto-ping wszystkich hostów (co 5 minut)');
+        
+        // Automatically ping all hosts periodically
+        this.hosts.forEach(async (host, hostId) => {
+          try {
+            const data = await Utils.fetchJSON(`/hosts/${hostId}/ping`, {
+              method: 'POST'
+            });
+            
+            const status = data?.success && data?.reachable ? 'online' : 'offline';
+            this.pingStates.set(hostId, status);
+            
+            // Update UI if visible
+            const tbody = document.getElementById('hostsBody');
+            if (tbody) {
+              const rows = tbody.querySelectorAll('tr');
+              rows.forEach(row => {
+                const hostCell = row.querySelector('td[data-label="Host"] strong');
+                if (hostCell && hostCell.textContent === hostId) {
+                  const statusCell = row.querySelector('.status-cell');
+                  if (statusCell) {
+                    const badge = statusCell.querySelector('.badge');
+                    const indicator = statusCell.querySelector('.status-indicator');
+                    const pingBtn = statusCell.querySelector('.ping-btn');
+                    
+                    if (badge && indicator && pingBtn) {
+                      const statusText = status === 'online' ? 'Online' : 'Offline';
+                      const btnText = status === 'online' ? '✅' : '❌';
+                      
+                      badge.className = `badge ${status}`;
+                      badge.textContent = statusText;
+                      indicator.className = `status-indicator ${status}`;
+                      pingBtn.className = `ping-btn ${status}`;
+                      pingBtn.innerHTML = btnText;
+                    }
+                  }
+                }
+              });
+            }
+          } catch (error) {
+            console.debug(`Auto-ping failed for ${hostId}:`, error);
+            this.pingStates.set(hostId, 'offline');
+          }
+        });
+      }
+    };
+
+    // ========== VM MANAGEMENT ========== (podobny kod jak poprzednio, bez zmian)
+    const VMController = {
+      vmOrder: new Map(),
+      nextIndex: 0,
+
+      getVMKey(vm) {
+        return `${vm.node || ''}|${vm.type || ''}|${vm.vmid || ''}`;
+      },
+
+      ensureOrder(vms) {
+        if (this.vmOrder.size === 0) {
+          const sorted = [...vms].sort((a, b) => {
+            const nodeCompare = (a.node || '').localeCompare(b.node || '');
+            if (nodeCompare) return nodeCompare;
+            
+            const typeCompare = (a.type || '').localeCompare(b.type || '');
+            if (typeCompare) return typeCompare;
+            
+            return (+a.vmid || 0) - (+b.vmid || 0);
+          });
+          
+          sorted.forEach(vm => {
+            const key = this.getVMKey(vm);
+            if (!this.vmOrder.has(key)) {
+              this.vmOrder.set(key, this.nextIndex++);
+            }
+          });
+          return sorted;
+        }
+        
+        vms.forEach(vm => {
+          const key = this.getVMKey(vm);
+          if (!this.vmOrder.has(key)) {
+            this.vmOrder.set(key, this.nextIndex++);
+          }
+        });
+        
+        return [...vms].sort((a, b) => {
+          const keyA = this.getVMKey(a);
+          const keyB = this.getVMKey(b);
+          return this.vmOrder.get(keyA) - this.vmOrder.get(keyB);
+        });
+      },
+
+      renderIPs(ips) {
+        if (!ips || !ips.length) return '—';
+        
+        return `<div class="ip-list">` + 
+          ips.map(ip => `
+            <span class="ip-chip">
+              ${ip}
+              <button class="ip-btn" title="Kopiuj IP" onclick="Utils.copyToClipboard('${ip}')">
+                📋
+              </button>
+            </span>
+          `).join('') + 
+          `</div>`;
+      },
+
+      async load() {
+        // Tylko gdy karta aktywna
+        if (!VisibilityManager.isVisible) {
+          console.debug('Skipping VM load - tab not visible');
+          return;
+        }
+        
+        const tbody = document.getElementById('vmsBody');
+        if (!tbody) return;
+        
+        try {
+          const data = await Utils.fetchJSON('/proxmox/vms');
+          
+          if (!data.success) {
+            tbody.innerHTML = `<tr><td colspan="8">❌ Błąd: ${data.error || 'brak szczegółów'}</td></tr>`;
+            return;
+          }
+          
+          let vms = data.vms || [];
+          vms = this.ensureOrder(vms);
+          
+          if (!vms.length) {
+            tbody.innerHTML = '<tr><td colspan="8">📭 Brak maszyn wirtualnych</td></tr>';
+            return;
+          }
+          
+          tbody.innerHTML = '';
+          vms.forEach(vm => {
+            const row = document.createElement('tr');
+            const status = (vm.status || '').toLowerCase();
+            const badgeClass = status === 'running' ? 'running' : 
+                             (status === 'stopped' || status === 'shutdown') ? 'stopped' : 'paused';
+            const ipsHtml = this.renderIPs(vm.ips || []);
+            
+            row.innerHTML = `
+              <td data-label="Węzeł"><strong>${vm.node || ''}</strong></td>
+              <td data-label="Typ"><code>${(vm.type || '').toUpperCase()}</code></td>
+              <td data-label="VMID"><code>${vm.vmid || ''}</code></td>
+              <td data-label="Nazwa">${vm.name || ''}</td>
+              <td data-label="Status">
+                <span class="badge ${badgeClass}">${status || '—'}</span>
+              </td>
+              <td data-label="Uptime">${Utils.formatUptime(vm.uptime || 0)}</td>
+              <td data-label="Adresy IP">${ipsHtml}</td>
+              <td data-label="Akcje">
+                <button data-act onclick="VMController.performAction('${vm.node}','${vm.type}',${vm.vmid},'start', this)" title="Uruchom maszynę">
+                  ▶️ Start
+                </button>
+                <button data-act onclick="VMController.performAction('${vm.node}','${vm.type}',${vm.vmid},'shutdown', this)" class="secondary" title="Wyłącz maszynę">
+                  🛑 Shutdown
+                </button>
+                <button data-act onclick="VMController.performAction('${vm.node}','${vm.type}',${vm.vmid},'stop', this)" class="secondary" title="Wymuś zatrzymanie">
+                  ⏹️ Stop
+                </button>
+                ${vm.type === 'qemu' ? `
+                <button data-act onclick="VMController.performAction('${vm.node}','${vm.type}',${vm.vmid},'reset', this)" class="secondary" title="Restart maszyny">
+                  🔄 Reset
+                </button>` : ''}
+              </td>
+            `;
+            tbody.appendChild(row);
+          });
+        } catch (error) {
+          console.error('VM loading error:', error);
+          tbody.innerHTML = '<tr><td colspan="8">❌ Błąd połączenia z Proxmox</td></tr>';
+        }
+      },
+
+      async performAction(node, type, vmid, action, button) {
+        const row = button?.closest('tr');
+        const actionButtons = row?.querySelectorAll('button[data-act]') || [];
+        
+        Utils.setElementsDisabled(actionButtons, true);
+        
+        try {
+          const data = await Utils.fetchJSON('/proxmox/vm/action', {
+            method: 'POST',
+            body: JSON.stringify({ node, type, vmid, action })
+          });
+          
+          const success = data.success || data.result?.success;
+          if (!success) {
+            const errorMsg = data.message || data.error || data.result?.message || 'Nieznany błąd';
+            throw new Error(errorMsg);
+          }
+          
+          const taskId = data.taskid || data.result?.taskid;
+          const taskInfo = taskId ? ` (task: ${taskId})` : '';
+          Utils.showToast(`✅ ${action} → ${type}:${vmid} na ${node}${taskInfo}`);
+          
+        } catch (error) {
+          console.error('VM action error:', error);
+          alert(`Błąd wykonania akcji: ${error.message}`);
+        } finally {
+          Utils.setElementsDisabled(actionButtons, false);
+          setTimeout(VMController.load.bind(VMController), CONFIG.VM_REFRESH_DELAY);
+        }
+      }
+    };
+
+    // ========== GLOBAL FUNCTIONS (for inline onclick handlers) ==========
+    window.controlRelay = RelayController.control.bind(RelayController);
+    window.controlAllRelays = RelayController.controlAll.bind(RelayController);
+    window.toggleNotify = NotificationController.toggle.bind(NotificationController);
+    window.vmAction = VMController.performAction.bind(VMController);
+
+    // Make HostController available globally for onclick handlers
+    window.HostController = HostController;
+
+    // ========== APPLICATION INITIALIZATION ==========
+    document.addEventListener('DOMContentLoaded', () => {
+      console.log('🚀 PowerControl Dashboard initialized (Performance Optimized)');
+      
+      // Initialize tab visibility detection FIRST
+      VisibilityManager.init();
+      
+      // Start initial loads
+      setTimeout(RelayController.pollStatus, 300);
+      setTimeout(NotificationController.fetchStates, 500);
+      setTimeout(HostController.load.bind(HostController), 700);
+      setTimeout(VMController.load.bind(VMController), 900);
+      
+      // Set up intervals ONLY if tab is visible
+      if (VisibilityManager.isVisible) {
+        VisibilityManager.resumePolling();
+      } else {
+        VisibilityManager.pausePolling();
+      }
+      
+      Utils.showToast('✅ Dashboard załadowany (Auto-ping: 5min)');
+    });
+
+    // ========== ERROR HANDLING ==========
+    window.addEventListener('error', (event) => {
+      console.error('Global error:', event.error);
+      Utils.showToast('❌ Wystąpił błąd aplikacji');
+    });
+
+    window.addEventListener('unhandledrejection', (event) => {
+      console.error('Unhandled promise rejection:', event.reason);
+      Utils.showToast('❌ Błąd komunikacji');
+      event.preventDefault();
+    });
+  </script>
+</body>
+</html>

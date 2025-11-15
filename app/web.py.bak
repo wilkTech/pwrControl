@@ -1,0 +1,1014 @@
+# app/web.py
+# -*- coding: utf-8 -*-
+"""
+Enhanced PowerControl Web API with improved dependency injection,
+consistent error handling, better UX support, and Relay 5 dependency logic.
+
+IMPROVEMENTS (2025-10-17):
+- Added relay field to computer config (which relay powers the host)
+- Check relay state before pinging hosts
+- Improved ping implementation with better timeout and error handling
+- Real-time status detection in /hosts/list endpoint
+- Added status reasons for better debugging
+"""
+
+import os
+import logging
+from threading import Thread, Event
+from typing import Any, Optional, Dict, List
+from flask import Flask, render_template, jsonify, request
+
+from .relay import RelayController
+from .proxmox import ProxmoxHelper
+from .emailer import Emailer
+
+logger = logging.getLogger(__name__)
+
+# Project paths (assume package layout: app/)
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+STATIC_DIR = os.path.join(BASE_DIR, "static")
+TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
+
+flask_app = Flask(__name__, static_folder=STATIC_DIR, template_folder=TEMPLATES_DIR)
+
+
+class PowerControlWeb:
+    def __init__(
+        self,
+        cfg: Any,
+        app_logger: logging.Logger,
+        emailer: Optional[Any] = None,
+        relay: Optional[Any] = None,
+        proxmox: Optional[Any] = None,
+        monitor: Optional[Any] = None,
+    ):
+        """
+        Enhanced PowerControl Web Service with proper dependency injection.
+
+        Args:
+            cfg: Configuration object (dataclass or dict-like)
+            app_logger: Logger instance
+            emailer: Optional Emailer instance (uses DI if provided)
+            relay: Optional RelayController instance (uses DI if provided)
+            proxmox: Optional ProxmoxHelper instance (uses DI if provided)
+            monitor: Optional Monitor instance (uses DI if provided)
+        """
+        self.cfg = cfg
+        self.logger = app_logger or logger
+        self.running = False
+        self._stop_event = Event()
+
+        # Enhanced dependency injection - prefer passed instances
+        self.emailer = emailer
+        self.relay = relay
+        self.proxmox = proxmox
+        self.monitor = monitor
+
+        # Get relay count from config instead of hardcoding
+        self.relay_count = len(getattr(cfg, 'relay_pins', [])) or 8
+
+        # Register routes after components are ready
+        self._register_routes()
+
+        # Thread handle for flask server
+        self.server_thread: Optional[Thread] = None
+        self.logger.debug(f"PowerControlWeb initialized with {self.relay_count} relays")
+
+    def get_relay_states(self) -> List[Dict[str, Any]]:
+        """Get relay states with simplified, robust fallback logic.
+        
+        Returns:
+            List[Dict]: [{'id': int, 'on': bool}, ...]
+        """
+        if not self.relay:
+            # No relay controller - return all OFF
+            return [{'id': i + 1, 'on': False} for i in range(self.relay_count)]
+
+        try:
+            # Try primary method first
+            if hasattr(self.relay, 'get_status') and callable(getattr(self.relay, 'get_status')):
+                states = self.relay.get_status()
+                if states and isinstance(states, list):
+                    return states
+        except Exception as e:
+            self.logger.debug(f"get_status() failed: {e}")
+
+        try:
+            # Fallback to direct relay access
+            if hasattr(self.relay, 'Relays'):
+                relays = getattr(self.relay, 'Relays', [])
+                return [
+                    {'id': i + 1, 'on': bool(getattr(relay, 'is_lit', False))}
+                    for i, relay in enumerate(relays)
+                ]
+        except Exception as e:
+            self.logger.debug(f"Direct relay access failed: {e}")
+
+        # Final fallback - all OFF
+        return [{'id': i + 1, 'on': False} for i in range(self.relay_count)]
+
+    def _should_fetch_proxmox_vms(self) -> bool:
+        """
+        Sprawdź czy należy pobrać VM z Proxmox na podstawie relay rules.
+        
+        Config:
+            proxmox.vm_fetch_relays: [2, 8]  # Lista relay IDs
+        
+        Returns:
+            bool: True - pobierz VM, False - pomiń (zwróć pusty array)
+        """
+        try:
+            # Pobierz konfigurację Proxmox
+            proxmox_cfg = getattr(self.cfg, 'proxmox', {}) or {}
+            
+            # Pobierz listę wymaganych relay
+            vm_fetch_relays = proxmox_cfg.get('vm_fetch_relays', [])
+            
+            # Jeśli brak konfiguracji → zawsze pobieraj (backward compatible)
+            if not vm_fetch_relays or not isinstance(vm_fetch_relays, list):
+                return True
+            
+            # Sprawdź czy którykolwiek z wymaganych relay jest ON (OR logic)
+            for relay_id in vm_fetch_relays:
+                if isinstance(relay_id, int) and 1 <= relay_id <= 8:
+                    relay_on = self.get_relay_state(relay_id)
+                    
+                    if relay_on:
+                        self.logger.debug(f"Relay {relay_id} is ON - will fetch Proxmox VMs")
+                        return True  # Wystarczy jeden relay ON
+            
+            # Wszystkie wymagane relay są OFF
+            self.logger.debug(f"All required relays {vm_fetch_relays} are OFF - skipping Proxmox VM fetch")
+            return False
+        
+        except Exception as e:
+            self.logger.debug(f"Error checking Proxmox VM fetch condition: {e}")
+            # W razie błędu - bezpieczny fallback: pobierz VM
+            return True
+
+    def standardize_error_response(self, error_message: str, status_code: int = 500) -> tuple:
+        """Create standardized JSON error response."""
+        import time
+        return jsonify({
+            'success': False,
+            'error': error_message,
+            'timestamp': int(time.time())
+        }), status_code
+
+    def standardize_success_response(self, data: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Create standardized JSON success response."""
+        import time
+        response = {
+            'success': True,
+            'timestamp': int(time.time())
+        }
+        if data:
+            response.update(data)
+        return response
+
+    def find_host_config(self, host_id):
+        """Znajdź konfigurację hosta po ID."""
+        # Sprawdź computers
+        computers = getattr(self.cfg, 'computers', {}) or {}
+        if host_id in computers:
+            comp = computers[host_id]
+            return {
+                'name': host_id,
+                'ip': comp.get('IP', ''),
+                'mac': comp.get('MAC', ''),
+                'os': comp.get('OS', 'unknown'),
+                'username': comp.get('Username', ''),
+                'password': comp.get('Password', ''),
+                'relay': comp.get('relay'),  # NOWE POLE
+                'type': 'computer'
+            }
+
+        # Sprawdź proxmox nodes
+        proxmox_cfg = getattr(self.cfg, 'proxmox', {}) or {}
+        nodes = proxmox_cfg.get('nodes', {}) or {}
+        nodes_mac = proxmox_cfg.get('nodes_mac', {}) or {}
+        nodes_relay = proxmox_cfg.get('nodes_relay', {}) or {}
+
+        if host_id in nodes:
+            # Pobierz dane logowania z node_credentials - z bezpiecznym fallbackiem
+            credentials = proxmox_cfg.get('node_credentials', {}) or {}
+            default_creds = credentials.get('default', {}) or {}
+            node_creds = credentials.get(host_id, {}) or {}
+
+            username = node_creds.get('user') if node_creds else None
+            if not username:
+                username = default_creds.get('user', 'root')
+
+            password = node_creds.get('password') if node_creds else None
+            if not password:
+                password = default_creds.get('password', '')
+
+            port = node_creds.get('port') if node_creds else None
+            if not port:
+                port = default_creds.get('port', 22)
+
+            return {
+                'name': host_id,
+                'ip': nodes[host_id],
+                'mac': nodes_mac.get(host_id, ''),
+                'os': 'linux',
+                'username': username,
+                'password': password,
+                'port': port,
+                'relay': nodes_relay.get(host_id),  # Proxmox nodes zazwyczaj bez relay
+                'type': 'proxmox_node'
+            }
+
+        return None
+
+    def execute_ssh_command(self, host, command):
+        """Wykonaj polecenie SSH na hoście."""
+        try:
+            import paramiko
+
+            # Bezpieczne pobieranie credentials z proper fallback
+            ip = host.get('ip')
+            username = host.get('username', 'root')
+            password = host.get('password', '')
+            port = int(host.get('port', 22))
+
+            if not all([ip, username, password]):
+                self.logger.error(f"Missing SSH credentials for {host.get('name')}")
+                return False
+
+            # Mapuj polecenia
+            commands = {
+                'shutdown': 'sudo shutdown -h now',
+                'reboot': 'sudo reboot'
+            }
+            cmd = commands.get(command)
+            if not cmd:
+                self.logger.error(f"Unknown command: {command}")
+                return False
+
+            # Połącz przez SSH
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            ssh.connect(hostname=ip, port=port, username=username, password=password, timeout=10)
+
+            # Wykonaj polecenie
+            stdin, stdout, stderr = ssh.exec_command(cmd)
+
+            # Nie czekamy na rezultat - shutdown/reboot od razu zamyka połączenie
+            ssh.close()
+
+            self.logger.info(f"SSH command '{command}' sent to {ip}")
+            return True
+
+        except ImportError:
+            self.logger.error("paramiko library not available for SSH commands")
+            return False
+        except Exception as e:
+            self.logger.error(f"SSH command '{command}' failed for {ip}: {e}")
+            return False
+
+    def ping_host(self, ip: str, timeout: int = 2, count: int = 1) -> bool:
+        """
+        Ping hosta i zwróć czy jest dostępny.
+        
+        Args:
+            ip: IP address to ping
+            timeout: Timeout w sekundach (default: 2)
+            count: Liczba pakietów (default: 1)
+        
+        Returns:
+            bool: True jeśli host odpowiada
+        """
+        try:
+            import subprocess
+            import platform
+
+            if not ip or ip.strip() == '':
+                return False
+
+            system = platform.system().lower()
+
+            if system == 'windows':
+                # Windows: -n count, -w timeout_ms
+                cmd = ['ping', '-n', str(count), '-w', str(timeout * 1000), ip]
+            else:
+                # Linux/Unix: -c count, -W timeout_sec
+                cmd = ['ping', '-c', str(count), '-W', str(timeout), ip]
+
+            # Zwiększony timeout dla subprocess (timeout + 1s buffer)
+            result = subprocess.run(
+                cmd, 
+                capture_output=True, 
+                text=True, 
+                timeout=timeout + 1,
+                check=False  # Nie rzucaj wyjątku na non-zero exit code
+            )
+
+            # return code 0 = host odpowiada
+            success = result.returncode == 0
+
+            if success:
+                self.logger.debug(f"Ping successful for {ip}")
+            else:
+                self.logger.debug(f"Ping failed for {ip} (returncode: {result.returncode})")
+
+            return success
+
+        except subprocess.TimeoutExpired:
+            self.logger.debug(f"Ping timeout for {ip}")
+            return False
+        except FileNotFoundError:
+            self.logger.warning("ping command not found in system PATH")
+            return False
+        except Exception as e:
+            self.logger.debug(f"Ping failed for {ip}: {e}")
+            return False
+
+    def get_relay_state(self, relay_id: int) -> bool:
+        """
+        Sprawdź czy przekaźnik jest włączony.
+        
+        Args:
+            relay_id: Numer przekaźnika (1-8)
+        
+        Returns:
+            bool: True jeśli włączony, False jeśli wyłączony
+        """
+        if not self.relay:
+            return False
+
+        try:
+            idx = relay_id - 1
+
+            # Metoda 1: Bezpośredni dostęp do Relays
+            if hasattr(self.relay, 'Relays'):
+                relays = getattr(self.relay, 'Relays', [])
+                if 0 <= idx < len(relays):
+                    relay = relays[idx]
+                    if hasattr(relay, 'is_lit'):
+                        return bool(relay.is_lit)
+
+            # Metoda 2: get_status()
+            if hasattr(self.relay, 'get_status'):
+                states = self.relay.get_status()
+                if states and isinstance(states, list) and 0 <= idx < len(states):
+                    return bool(states[idx].get('on', False))
+
+        except Exception as e:
+            self.logger.debug(f"Error checking relay {relay_id} state: {e}")
+
+        return False
+
+    def check_host_status(self, ip: str, relay_id: int = None) -> dict:
+        """
+        Sprawdź status hosta z uwzględnieniem stanu przekaźnika.
+        
+        Args:
+            ip: IP address hosta
+            relay_id: Opcjonalny numer przekaźnika zasilającego host (1-8)
+        
+        Returns:
+            dict: {
+                'status': 'online'|'offline'|'powered_off'|'unknown',
+                'reachable': bool,
+                'relay_on': bool|None,
+                'reason': str  # Wyjaśnienie statusu
+            }
+        """
+        result = {
+            'status': 'unknown',
+            'reachable': False,
+            'relay_on': None,
+            'reason': ''
+        }
+
+        if not ip or ip.strip() == '':
+            result['reason'] = 'No IP configured'
+            return result
+
+        # Sprawdź stan przekaźnika jeśli podany
+        if relay_id is not None and 1 <= relay_id <= 8:
+            relay_on = self.get_relay_state(relay_id)
+            result['relay_on'] = relay_on
+
+            if not relay_on:
+                # Przekaźnik wyłączony = host nie ma zasilania
+                result['status'] = 'powered_off'
+                result['reason'] = f'Relay {relay_id} is OFF'
+                return result
+
+        # Przekaźnik włączony lub nie skonfigurowany - sprawdź ping
+        reachable = self.ping_host(ip, timeout=2, count=1)
+        result['reachable'] = reachable
+
+        if reachable:
+            result['status'] = 'online'
+            result['reason'] = 'Host responds to ping'
+        else:
+            # Host nie odpowiada mimo że przekaźnik włączony
+            if result['relay_on']:
+                result['status'] = 'offline'
+                result['reason'] = 'Relay ON but host not responding'
+            else:
+                result['status'] = 'offline'
+                result['reason'] = 'Host not responding to ping'
+
+        return result
+
+    def _register_routes(self):
+        app = flask_app
+
+        @app.route('/favicon.ico')
+        @app.route('/favicon.png')
+        def favicon():
+            fav = os.path.join(STATIC_DIR, 'favicon.png')
+            if os.path.isfile(fav):
+                return flask_app.send_static_file('favicon.png')
+            return '', 204
+
+        @app.route('/healthz')
+        def healthz():
+            return jsonify({
+                'ok': True,
+                'components': {
+                    'relay': bool(self.relay and hasattr(self.relay, 'Relays')),
+                    'proxmox': bool(self.proxmox and getattr(self.proxmox, 'is_available', lambda: False)()),
+                    'emailer': bool(self.emailer),
+                    'monitor': bool(self.monitor)
+                },
+                'relay_count': self.relay_count
+            })
+
+        @app.route('/')
+        def index():
+            try:
+                states = self.get_relay_states()
+                relay_status = []
+                for s in states:
+                    status_txt = 'on (włączony)' if s.get('on') else 'off (wyłączony)'
+                    relay_status.append({
+                        'id': s.get('id'),
+                        'status': status_txt,
+                        'on': s.get('on')
+                    })
+                computers = getattr(self.cfg, 'computers', {}) or {}
+                return render_template('index.html', relay_status=relay_status, computers=computers, relay_count=self.relay_count)
+            except Exception as e:
+                self.logger.exception("Error rendering index page")
+                # Fallback relay status
+                relay_status = [{'id': i + 1, 'status': 'off (wyłączony)', 'on': False} for i in range(self.relay_count)]
+                computers = {}
+                return render_template('index.html', relay_status=relay_status, computers=computers, relay_count=self.relay_count)
+
+        # RELAY CONTROL ENDPOINTS
+        @app.route('/relay/<int:relay_id>/<action>', methods=['POST'])
+        def control_relay(relay_id, action):
+            if not self.relay:
+                return self.standardize_error_response("Relay controller not available", 503)
+
+            if action not in ['on', 'off']:
+                return self.standardize_error_response("Valid actions: 'on', 'off'", 400)
+
+            if not (1 <= relay_id <= self.relay_count):
+                return self.standardize_error_response(f"Relay ID must be 1-{self.relay_count}", 400)
+
+            try:
+                idx = relay_id - 1
+                if action == 'on':
+                    if hasattr(self.relay, 'turn_on'):
+                        self.relay.turn_on(idx)
+                    elif hasattr(self.relay, 'set_relay'):
+                        self.relay.set_relay(idx, True)
+                    else:
+                        return self.standardize_error_response("Relay turn_on not supported", 501)
+                else:  # action == 'off'
+                    if hasattr(self.relay, 'turn_off'):
+                        self.relay.turn_off(idx)
+                    elif hasattr(self.relay, 'set_relay'):
+                        self.relay.set_relay(idx, False)
+                    else:
+                        return self.standardize_error_response("Relay turn_off not supported", 501)
+
+                # CRITICAL: Call Relay 5 dependency logic after any relay change
+                if hasattr(self.relay, 'control_relay_19'):
+                    try:
+                        self.relay.control_relay_19()
+                        self.logger.debug(f"control_relay_19() called after relay {relay_id} {action}")
+                    except Exception as e:
+                        self.logger.debug(f"control_relay_19() failed after relay {relay_id} {action}: {e}")
+
+                return jsonify(self.standardize_success_response({'relay_id': relay_id, 'action': action}))
+
+            except Exception as e:
+                self.logger.exception(f"Error controlling relay {relay_id}")
+                return self.standardize_error_response(str(e), 500)
+
+        @app.route('/relay/<int:relay_id>/notify', methods=['POST'])
+        def set_relay_notify(relay_id):
+            if not self.relay:
+                return self.standardize_error_response("Relay controller not available", 503)
+
+            if not (1 <= relay_id <= self.relay_count):
+                return self.standardize_error_response(f"Relay ID must be 1-{self.relay_count}", 400)
+
+            try:
+                data = request.get_json(silent=True) or {}
+                if 'enabled' not in data:
+                    return self.standardize_error_response("Missing 'enabled' field", 400)
+
+                enabled = bool(data.get('enabled'))
+
+                if not hasattr(self.relay, 'set_notification_enabled'):
+                    return self.standardize_error_response("Relay notifications not supported", 501)
+
+                success = self.relay.set_notification_enabled(relay_id, enabled)
+                if not success:
+                    return self.standardize_error_response(f"Failed to update relay {relay_id} notifications", 500)
+
+                return jsonify(self.standardize_success_response({'relay_id': relay_id, 'enabled': enabled}))
+
+            except Exception as e:
+                self.logger.exception(f"Error setting relay {relay_id} notifications")
+                return self.standardize_error_response(str(e), 500)
+
+        @app.route('/debug/relay_notifications', methods=['GET'])
+        def debug_relay_notifications():
+            if not self.relay:
+                return self.standardize_error_response("Relay controller not available", 503)
+
+            try:
+                if not hasattr(self.relay, 'get_notification_states'):
+                    return self.standardize_error_response("Notifications not supported", 501)
+
+                states = self.relay.get_notification_states() or {}
+
+                # Normalize notification states
+                normalized = {}
+                for relay_id, state in states.items():
+                    try:
+                        if isinstance(state, dict):
+                            normalized[str(relay_id)] = bool(state.get('enabled', False))
+                        else:
+                            normalized[str(relay_id)] = bool(state)
+                    except Exception:
+                        normalized[str(relay_id)] = False
+
+                return jsonify(self.standardize_success_response({'notifications': normalized}))
+
+            except Exception as e:
+                self.logger.exception("Error getting relay notifications")
+                return self.standardize_error_response(str(e), 500)
+
+        @app.route('/allon', methods=['POST'])
+        def all_on():
+            if not self.relay:
+                return self.standardize_error_response("Relay controller not available", 503)
+
+            try:
+                if hasattr(self.relay, 'turn_on_all'):
+                    self.relay.turn_on_all()
+                else:
+                    return self.standardize_error_response("turn_on_all not supported", 501)
+
+                # CRITICAL: Call Relay 5 dependency logic after allon
+                if hasattr(self.relay, 'control_relay_19'):
+                    try:
+                        self.relay.control_relay_19()
+                        self.logger.debug("control_relay_19() called after allon")
+                    except Exception as e:
+                        self.logger.debug(f"control_relay_19() failed after allon: {e}")
+
+                return jsonify(self.standardize_success_response())
+
+            except Exception as e:
+                self.logger.exception("Error turning all relays on")
+                return self.standardize_error_response(str(e), 500)
+
+        @app.route('/alloff', methods=['POST'])
+        def all_off():
+            if not self.relay:
+                return self.standardize_error_response("Relay controller not available", 503)
+
+            try:
+                if hasattr(self.relay, 'turn_off_all'):
+                    self.relay.turn_off_all()
+                else:
+                    return self.standardize_error_response("turn_off_all not supported", 501)
+
+                # CRITICAL: Call Relay 5 dependency logic after alloff
+                if hasattr(self.relay, 'control_relay_19'):
+                    try:
+                        self.relay.control_relay_19()
+                        self.logger.debug("control_relay_19() called after alloff")
+                    except Exception as e:
+                        self.logger.debug(f"control_relay_19() failed after alloff: {e}")
+
+                return jsonify(self.standardize_success_response())
+
+            except Exception as e:
+                self.logger.exception("Error turning all relays off")
+                return self.standardize_error_response(str(e), 500)
+
+        @app.route('/status', methods=['GET'])
+        def status():
+            try:
+                states = self.get_relay_states()
+                status_lines = [f"Przekaźnik {s['id']}: {'on (włączony)' if s['on'] else 'off (wyłączony)'}" for s in states]
+                return jsonify(self.standardize_success_response({'relay_status': status_lines}))
+            except Exception as e:
+                self.logger.exception("Error getting status")
+                return self.standardize_error_response(str(e), 500)
+
+        @app.route('/debug/relays', methods=['GET'])
+        def debug_relays():
+            try:
+                states = self.get_relay_states()
+                return jsonify(self.standardize_success_response({'relays': states, 'relay_count': self.relay_count}))
+            except Exception as e:
+                self.logger.exception("Error in debug_relays")
+                return self.standardize_error_response(str(e), 500)
+
+        # LEGACY COMPUTER ENDPOINTS (for backward compatibility)
+        @app.route('/computer/<name>/wake', methods=['POST'])
+        def computer_wake(name):
+            try:
+                computers = getattr(self.cfg, 'computers', {}) or {}
+                computer = computers.get(name)
+                if not computer:
+                    return self.standardize_error_response("Computer not found", 404)
+
+                mac = computer.get('MAC', '')
+                if not mac:
+                    return self.standardize_error_response("Computer MAC address not configured", 400)
+
+                success = False
+                # Try WOL through relay controller
+                if hasattr(self.relay, 'send_wol_safe'):
+                    success = bool(self.relay.send_wol_safe(mac))
+                else:
+                    # Fallback - try wakeonlan library
+                    try:
+                        from wakeonlan import send_magic_packet
+                        send_magic_packet(mac)
+                        success = True
+                    except ImportError:
+                        self.logger.warning("wakeonlan library not available for WOL")
+                    except Exception as e:
+                        self.logger.error(f"WOL failed for {mac}: {e}")
+
+                return jsonify(self.standardize_success_response({'computer': name, 'mac': mac, 'wol_sent': success}))
+
+            except Exception as e:
+                self.logger.exception(f"Error waking computer {name}")
+                return self.standardize_error_response(str(e), 500)
+
+        @app.route('/computer/<name>/shutdown', methods=['POST'])
+        def computer_shutdown(name):
+            try:
+                computers = getattr(self.cfg, 'computers', {}) or {}
+                computer = computers.get(name)
+                if not computer:
+                    return self.standardize_error_response("Computer not found", 404)
+
+                ip = computer.get('IP', '')
+                os_type = computer.get('OS', '')
+                username = computer.get('Username')
+                password = computer.get('Password')
+
+                if not ip:
+                    return self.standardize_error_response("Computer IP not configured", 400)
+
+                success = False
+                if hasattr(self.relay, 'shutdown_remote_computer'):
+                    success = bool(self.relay.shutdown_remote_computer(ip, os_type, username, password))
+
+                return jsonify(self.standardize_success_response({'computer': name, 'ip': ip, 'shutdown_sent': success}))
+
+            except Exception as e:
+                self.logger.exception(f"Error shutting down computer {name}")
+                return self.standardize_error_response(str(e), 500)
+
+        # UNIFIED HOST MANAGEMENT ENDPOINTS
+        @app.route('/hosts/list', methods=['GET'])
+        def hosts_list():
+            """Endpoint zwracający listę hostów z konfiguracji i realnym statusem."""
+            try:
+                computers = getattr(self.cfg, 'computers', {}) or {}
+                proxmox_cfg = getattr(self.cfg, 'proxmox', {}) or {}
+                proxmox_nodes = proxmox_cfg.get('nodes', {}) or {}
+                proxmox_macs = proxmox_cfg.get('nodes_mac', {}) or {}
+                proxmox_relays = proxmox_cfg.get('nodes_relay', {}) or {}
+
+                hosts = []
+
+                # Dodaj komputery z sekcji computers
+                for name, info in computers.items():
+                    ip = info.get('IP', '')
+                    relay_id = info.get('relay')  # NOWE POLE: numer przekaźnika
+
+                    # Sprawdź status z uwzględnieniem przekaźnika
+                    if ip:
+                        status_info = self.check_host_status(ip, relay_id)
+                        status = status_info['status']
+                        status_reason = status_info['reason']
+                    else:
+                        status = 'unknown'
+                        status_reason = 'No IP configured'
+
+                    host_data = {
+                        'hostname': name,
+                        'name': name,
+                        'ip': ip,
+                        'mac': info.get('MAC', ''),
+                        'os': info.get('OS', 'unknown'),
+                        'relay': relay_id,  # NOWE POLE
+                        'status': status,
+                        'status_reason': status_reason,  # NOWE POLE
+                        'type': 'computer'
+                    }
+                    hosts.append(host_data)
+
+                # Dodaj węzły Proxmox
+                for node_name, node_ip in proxmox_nodes.items():
+                    relay_id = proxmox_relays.get(node_name)
+                    # Węzły Proxmox zazwyczaj nie są na przekaźnikach
+                    # ale jeśli są, można dodać proxmox_relay_map w config
+                    if node_ip:
+                        status_info = self.check_host_status(node_ip, relay_id)
+                        status = status_info['status']
+                        status_reason = status_info['reason']
+                    else:
+                        status = 'unknown'
+                        status_reason = 'No IP configured'
+
+                    host_data = {
+                        'hostname': node_name,
+                        'name': node_name,
+                        'ip': node_ip,
+                        'mac': proxmox_macs.get(node_name, ''),
+                        'os': 'linux',
+                        'relay': relay_id,
+                        'status': status,
+                        'status_reason': status_reason,
+                        'type': 'proxmox_node'
+                    }
+                    hosts.append(host_data)
+
+                return jsonify(self.standardize_success_response({'hosts': hosts}))
+
+            except Exception as e:
+                self.logger.exception("Error getting hosts list")
+                return self.standardize_error_response(str(e), 500)
+
+        @app.route('/hosts/<host_id>/wake', methods=['POST'])
+        def host_wake(host_id):
+            """WOL dla hosta."""
+            try:
+                host = self.find_host_config(host_id)
+                if not host:
+                    return self.standardize_error_response(f"Host {host_id} not found", 404)
+
+                mac = host.get('mac', '')
+                if not mac:
+                    return self.standardize_error_response(f"MAC address not configured for host {host_id}", 400)
+
+                success = False
+                # Próbuj WOL przez relay controller
+                if hasattr(self.relay, 'send_wol_safe'):
+                    success = bool(self.relay.send_wol_safe(mac))
+                else:
+                    # Fallback - użyj biblioteki wakeonlan jeśli dostępna
+                    try:
+                        from wakeonlan import send_magic_packet
+                        send_magic_packet(mac)
+                        success = True
+                    except ImportError:
+                        self.logger.warning("wakeonlan library not available for WOL")
+                    except Exception as e:
+                        self.logger.error(f"WOL failed for {mac}: {e}")
+
+                return jsonify(self.standardize_success_response({'host': host_id, 'mac': mac, 'wol_sent': success}))
+
+            except Exception as e:
+                self.logger.exception(f"Error waking host {host_id}")
+                return self.standardize_error_response(str(e), 500)
+
+        @app.route('/hosts/<host_id>/shutdown', methods=['POST'])
+        def host_shutdown(host_id):
+            """Shutdown hosta przez SSH."""
+            try:
+                host = self.find_host_config(host_id)
+                if not host:
+                    return self.standardize_error_response(f"Host {host_id} not found", 404)
+
+                ip = host.get('ip', '')
+                if not ip:
+                    return self.standardize_error_response(f"IP address not configured for host {host_id}", 400)
+
+                # Użyj istniejącej logiki shutdownu
+                success = self.execute_ssh_command(host, 'shutdown')
+
+                return jsonify(self.standardize_success_response({'host': host_id, 'ip': ip, 'shutdown_sent': success}))
+
+            except Exception as e:
+                self.logger.exception(f"Error shutting down host {host_id}")
+                return self.standardize_error_response(str(e), 500)
+
+        @app.route('/hosts/<host_id>/reboot', methods=['POST'])
+        def host_reboot(host_id):
+            """Restart hosta przez SSH."""
+            try:
+                host = self.find_host_config(host_id)
+                if not host:
+                    return self.standardize_error_response(f"Host {host_id} not found", 404)
+
+                ip = host.get('ip', '')
+                if not ip:
+                    return self.standardize_error_response(f"IP address not configured for host {host_id}", 400)
+
+                # Użyj istniejącej logiki shutdownu
+                success = self.execute_ssh_command(host, 'reboot')
+
+                return jsonify(self.standardize_success_response({'host': host_id, 'ip': ip, 'reboot_sent': success}))
+
+            except Exception as e:
+                self.logger.exception(f"Error rebooting host {host_id}")
+                return self.standardize_error_response(str(e), 500)
+
+        @app.route('/hosts/<host_id>/ping', methods=['GET', 'POST'])  # DODANO GET
+        def host_ping(host_id):
+            """Ping hosta z uwzględnieniem stanu przekaźnika."""
+            try:
+                host = self.find_host_config(host_id)
+                if not host:
+                    return self.standardize_error_response(f"Host {host_id} not found", 404)
+
+                ip = host.get('ip', '')
+                if not ip:
+                    return self.standardize_error_response(
+                        f"IP address not configured for host {host_id}", 400
+                    )
+
+                # Pobierz numer przekaźnika jeśli jest
+                relay_id = host.get('relay')
+
+                # Sprawdź status
+                status_info = self.check_host_status(ip, relay_id)
+
+                return jsonify(self.standardize_success_response({
+                    'host': host_id,
+                    'ip': ip,
+                    'relay': relay_id,
+                    'reachable': status_info['reachable'],
+                    'relay_on': status_info['relay_on'],
+                    'status': status_info['status'],
+                    'reason': status_info['reason']
+                }))
+
+            except Exception as e:
+                self.logger.exception(f"Error pinging host {host_id}")
+                return self.standardize_error_response(str(e), 500)
+
+        # PROXMOX ENDPOINTS
+        @app.route('/proxmox/vms', methods=['GET'])
+        def proxmox_vms():
+            if not self.proxmox:
+                return self.standardize_error_response("Proxmox helper not available", 503)
+            
+            try:
+                if not getattr(self.proxmox, 'is_available', lambda: False)():
+                    return self.standardize_error_response("Proxmox not configured or unavailable", 503)
+                
+                # 🆕 SPRAWDŹ WARUNEK CONDITIONAL FETCHING
+                if not self._should_fetch_proxmox_vms():
+                    self.logger.debug("Skipping Proxmox VM fetch - required relays are OFF")
+                    return jsonify(self.standardize_success_response({
+                        'vms': [],
+                        'skipped': True,
+                        'reason': 'Required relays are OFF'
+                    }))
+                
+                # Pobierz VM tylko jeśli warunek spełniony
+                vms = self.proxmox.list_all_vms()
+                return jsonify(self.standardize_success_response({'vms': vms}))
+            
+            except Exception as e:
+                self.logger.exception("Error getting Proxmox VMs")
+                return self.standardize_error_response(str(e), 500)
+
+        @app.route('/proxmox/vm/ips', methods=['GET'])
+        def proxmox_vm_ips():
+            if not self.proxmox:
+                return self.standardize_error_response("Proxmox helper not available", 503)
+
+            try:
+                if not getattr(self.proxmox, 'is_available', lambda: False)():
+                    return self.standardize_error_response("Proxmox not configured or unavailable", 503)
+
+                node = request.args.get('node', '', type=str)
+                vmtype = request.args.get('type', '', type=str)
+                vmid = request.args.get('vmid', type=int)
+
+                if not all([node, vmtype, vmid is not None]):
+                    return self.standardize_error_response("Required parameters: node, type, vmid", 400)
+
+                ips = self.proxmox.get_vm_ips(node, vmtype, vmid)
+                return jsonify(self.standardize_success_response({'node': node, 'type': vmtype, 'vmid': vmid, 'ips': ips}))
+
+            except Exception as e:
+                self.logger.exception("Error getting VM IPs")
+                return self.standardize_error_response(str(e), 500)
+
+        @app.route('/proxmox/vm/action', methods=['POST'])
+        def proxmox_vm_action():
+            if not self.proxmox:
+                return self.standardize_error_response("Proxmox helper not available", 503)
+
+            try:
+                if not getattr(self.proxmox, 'is_available', lambda: False)():
+                    return self.standardize_error_response("Proxmox not configured or unavailable", 503)
+
+                data = request.get_json(silent=True) or {}
+                node = data.get('node')
+                vmtype = data.get('type')
+                vmid = data.get('vmid')
+                action = data.get('action')
+
+                if not all([node, vmtype, vmid, action]):
+                    return self.standardize_error_response("Required fields: node, type, vmid, action", 400)
+
+                try:
+                    vmid = int(vmid)
+                except (ValueError, TypeError):
+                    return self.standardize_error_response("vmid must be an integer", 400)
+
+                if not hasattr(self.proxmox, 'vm_action'):
+                    return self.standardize_error_response("VM actions not supported", 501)
+
+                result = self.proxmox.vm_action(node, vmtype, vmid, action)
+
+                if result.get('success'):
+                    return jsonify(self.standardize_success_response(result))
+                else:
+                    return self.standardize_error_response(result.get('error', 'VM action failed'), 400)
+
+            except Exception as e:
+                self.logger.exception("Error executing VM action")
+                return self.standardize_error_response(str(e), 500)
+
+        @app.route('/proxmox/node/action', methods=['POST'])
+        def proxmox_node_action():
+            if not self.proxmox:
+                return self.standardize_error_response("Proxmox helper not available", 503)
+
+            try:
+                if not getattr(self.proxmox, 'is_available', lambda: False)():
+                    return self.standardize_error_response("Proxmox not configured or unavailable", 503)
+
+                data = request.get_json(silent=True) or {}
+                node = data.get('node')
+                action = data.get('action')
+
+                if not all([node, action]):
+                    return self.standardize_error_response("Required fields: node, action", 400)
+
+                if not hasattr(self.proxmox, 'node_action'):
+                    return self.standardize_error_response("Node actions not supported", 501)
+
+                result = self.proxmox.node_action(node, action)
+
+                if result.get('success'):
+                    return jsonify(self.standardize_success_response(result))
+                else:
+                    return self.standardize_error_response(result.get('error', 'Node action failed'), 400)
+
+            except Exception as e:
+                self.logger.exception("Error executing node action")
+                return self.standardize_error_response(str(e), 500)
+
+    def start(self):
+        """Start Flask server in background thread."""
+        if self.running:
+            return
+
+        host = getattr(self.cfg, 'host', '0.0.0.0')
+        port = int(getattr(self.cfg, 'port', 5000))
+
+        self.server_thread = Thread(
+            target=flask_app.run,
+            kwargs={'host': host, 'port': port, 'threaded': True, 'use_reloader': False},
+            daemon=True
+        )
+        self.server_thread.start()
+        self.running = True
+        self.logger.info(f"Flask started on {host}:{port}")
+        self.logger.info("Web service started")
+
+    def stop(self):
+        """Stop web service gracefully."""
+        if not self.running:
+            return
+
+        self.running = False
+        self._stop_event.set()
+        self.logger.info("Web service stopped")

@@ -1,0 +1,42 @@
+{
+  "1": {
+    "enabled": false,
+    "last_on": null,
+    "notified": false
+  },
+  "2": {
+    "enabled": true,
+    "last_on": null,
+    "notified": false
+  },
+  "3": {
+    "enabled": false,
+    "last_on": null,
+    "notified": false
+  },
+  "4": {
+    "enabled": false,
+    "last_on": null,
+    "notified": false
+  },
+  "5": {
+    "enabled": false,
+    "last_on": null,
+    "notified": false
+  },
+  "6": {
+    "enabled": true,
+    "last_on": null,
+    "notified": false
+  },
+  "7": {
+    "enabled": false,
+    "last_on": null,
+    "notified": false
+  },
+  "8": {
+    "enabled": true,
+    "last_on": null,
+    "notified": false
+  }
+}

@@ -1,0 +1,128 @@
+# PowerControl Project Configuration Example
+
+# ====================================
+# SEKCJA WEB - Ustawienia serwera Flask
+# ====================================
+web:
+  host: "0.0.0.0"                    # IP do nasłuchiwania
+  port: 5000                         # Port aplikacji
+  debug: false                        # Wyłącz debug w produkcji!
+  secret_key: "change-me-to-random-string-at-least-32-chars"
+  workers: 4                         # Ilość workerów Gunicorn
+
+# ====================================
+# SEKCJA EMAIL - Powiadomienia
+# ====================================
+email:
+  enabled: true
+  server: "smtp.gmail.com"
+  port: 465
+  use_tls: true
+  from_addr: "your-email@gmail.com"
+  password: "your-app-password"      # Dla Gmaila użyj hasła aplikacji!
+  to_addrs:
+    - "admin@example.com"
+    - "user2@example.com"
+  sender_name: "PowerControl"
+  timeout: 10
+
+# ====================================
+# SEKCJA PRZEKAŹNIKÓW - GPIO
+# ====================================
+relay_pins:                          # Numery GPIO dla przekaźników
+  - 17
+  - 27
+  - 22
+  - 23
+
+switch_pins: []                      # Piny dla przycisków (opcjonalnie)
+
+# ====================================
+# SEKCJA PROXMOX - Integracja VM
+# ====================================
+proxmox:
+  enabled: true
+  host: "192.168.1.10"              # IP serwera Proxmox
+  port: 8006
+  user: "root@pam"
+  password: "your-proxmox-password"
+  verify_ssl: false                  # false dla self-signed certs
+  timeout: 10
+
+# ====================================
+# SEKCJA MONITORING - Heartbeat
+# ====================================
+monitor:
+  enabled: true
+  heartbeat_interval: 30              # Sekundy między heartbeatami
+  heartbeat_file: "/tmp/powercontrol_heartbeat.json"
+  max_hosts_per_request: 10          # Hosty do jednoczesnego monitorowania
+  thread_pool_size: 5                # Wątki dla networking
+  network_timeout: 5                 # Timeout dla pingów
+
+# ====================================
+# SEKCJA LOGOWANIA
+# ====================================
+logging:
+  level: "INFO"                       # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  file: "logs/powercontrol.log"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  max_size_mb: 50                    # Rozmiar przed rotacją
+  backup_count: 10                   # Ilość archiwalnych logów
+
+# ====================================
+# SEKCJA HOSTÓW DO MONITOROWANIA
+# ====================================
+hosts:
+  - name: "Server1"
+    ip: "192.168.1.50"
+    mac: "00:11:22:33:44:55"
+    enabled: true
+
+  - name: "Server2"
+    ip: "192.168.1.51"
+    mac: "00:11:22:33:44:66"
+    enabled: true
+
+  - name: "Laptop"
+    ip: "192.168.1.100"
+    mac: "aa:bb:cc:dd:ee:ff"
+    enabled: false
+
+# ====================================
+# OPCJE DODATKOWE
+# ====================================
+app:
+  name: "PowerControl"
+  version: "1.0.0"
+  description: "Infrastructure Management System"
+  
+database:
+  enabled: false                      # Jeśli używasz bazy danych
+  type: "sqlite"                      # sqlite, postgresql, mysql
+  # path: "powercontrol.db"           # Dla SQLite
+  # connection_string: "postgresql://user:pass@localhost/db"  # Dla PostgreSQL
+
+security:
+  enable_auth: false                  # Włącz autentykację
+  enable_cors: false                  # Włącz CORS jeśli potrzebny
+  allowed_origins:
+    - "http://localhost:3000"
+    - "http://localhost:5000"
+
+# ====================================
+# UWAGI WAŻNE
+# ====================================
+# 1. HASŁA: W produkcji ustaw hasła w zmiennych środowiskowych!
+#    export POWERCONTROL_EMAIL_PASSWORD="password"
+#    export POWERCONTROL_PROXMOX_PASSWORD="password"
+#
+# 2. CERTYFIKATY: Dla Proxmox self-signed, ustaw verify_ssl: false
+#
+# 3. LOGI: Upewnij się że katalog logs/ istnieje
+#    mkdir -p logs/
+#
+# 4. BACKUP: Regularnie backupuj config.yaml (bez haseł!)
+#
+# 5. UPRAWNIENIA: Dla GPIO potrzebujesz root lub członkostwa w grupie gpio
+#    sudo usermod -a -G gpio $USER

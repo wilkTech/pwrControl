@@ -1,0 +1,6 @@
+flask
+pyyaml
+proxmoxer
+paramiko
+wakeonlan
+gpiozero
