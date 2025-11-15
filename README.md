@@ -4,7 +4,7 @@ Zaawansowany system zarządzania infrastrukturą sieciową z obsługą przekaźn
 
 ## Funkcjonalności
 
-- **Zarządzanie przekaźnikami** - Sterowanie przełącznikami GPIO w time-realtime
+- **Zarządzanie przekaźnikami** - Sterowanie przekaźnikami z GPIO w time-realtime
 - **Monitoring hostów** - Śledzenie statusu i dostępności urządzeń w sieci
 - **Integracja Proxmox** - Kontrola maszyn wirtualnych i systemów
 - **Interfejs webowy** - Responsywny dashboard z aktualizacjami live
