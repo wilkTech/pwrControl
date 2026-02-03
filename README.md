@@ -258,18 +258,6 @@ Pliki `config.yaml`, `logs/`, `relay_notifications.json`, `last_heartbeat.json`,
 
 ---
 
-## Bezpieczeństwo i dobre praktyki
-
-- **Nie commituj** `config.yaml` – zawiera hasła, tokeny, adresy IP i e-mail. Używaj `config.example.yaml` jako szablonu.
-- Hasła i tokeny najlepiej przekazywać przez **zmienne środowiskowe** (`POWERCONTROL__EMAIL__PASSWORD`, `POWERCONTROL__PROXMOX__TOKEN_VALUE` itd.).
-- Interfejs webowy **nie ma wbudowanej autoryzacji** – jeśli aplikacja jest dostępna w sieci, zabezpiecz ją (firewall, reverse proxy z auth, VPN) lub nasłuchuj tylko na localhost.
-- W produkcji rozważ:
-  - HTTPS za reverse proxy (nginx, Caddy),
-  - ograniczenie dostępu do portu po IP,
-  - wyłączenie lub ograniczenie endpointu `/logs` i `/debug/*`.
-
----
-
 ## Rozwiązywanie problemów
 
 - **Aplikacja startuje, ale przekaźniki nie reagują**  
