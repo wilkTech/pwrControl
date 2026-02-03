@@ -690,6 +690,38 @@
               aria-label="Wyłącz przekaźnik {{ relay.id }}">
               ⏹️ Wyłącz
             </button>
+            {% if relay.id in [2, 8] and quick_start_vms %}
+              {% set relay_key = 'relay_' ~ relay.id %}
+              {% if quick_start_vms.get(relay_key) %}
+                <div style="margin-top: var(--spacing-sm);">
+                  <select 
+                    id="vm-select-{{ relay.id }}" 
+                    style="background: var(--card); color: var(--fg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--spacing-xs) var(--spacing-sm); font-size: 12px; margin-right: var(--spacing-xs);"
+                    aria-label="Wybierz VM do uruchomienia">
+                    <option value="">-- Wybierz VM --</option>
+                    {% for vmid, description in quick_start_vms[relay_key].items() %}
+                      <option value="{{ vmid }}">{{ description }}</option>
+                    {% endfor %}
+                  </select>
+                  <button 
+                    onclick="quickStartVM({{ relay.id }}, this)" 
+                    id="btn-quick-start-{{ relay.id }}"
+                    class="small"
+                    style="background: var(--accent); color: #000000;"
+                    aria-label="Szybki start VM dla przekaźnika {{ relay.id }}">
+                    🚀 Szybki Start
+                  </button>
+                  <button 
+                    onclick="quickShutdownVM({{ relay.id }}, this)" 
+                    id="btn-quick-shutdown-{{ relay.id }}"
+                    class="small secondary"
+                    style="background: var(--error); color: #ffffff;"
+                    aria-label="Szybkie wyłączenie dla przekaźnika {{ relay.id }}">
+                    🛑 Szybkie Wyłączenie
+                  </button>
+                </div>
+              {% endif %}
+            {% endif %}
           </td>
         </tr>
         {% endfor %}
@@ -751,6 +783,122 @@
     </table>
   </div>
 
+  <!-- ========== SYSTEMD SERVICES MANAGEMENT SECTION ========== -->
+  <h1>⚙️ Zarządzanie Usługami Systemd</h1>
+  <div class="table-container">
+    <table id="servicesTable">
+      <thead>
+        <tr>
+          <th data-label="Usługa">Usługa</th>
+          <th data-label="Nazwa systemd">Nazwa systemd</th>
+          <th data-label="Status">Status</th>
+          <th data-label="Akcje">Akcje</th>
+        </tr>
+      </thead>
+      <tbody id="servicesBody">
+        <tr>
+          <td colspan="4" class="loading">Ładowanie usług...</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ========== DOCKER CONTAINERS MANAGEMENT SECTION ========== -->
+  <h1>🐳 Zarządzanie Kontenerami Docker</h1>
+  <div class="table-container">
+    <table id="dockerTable">
+      <thead>
+        <tr>
+          <th data-label="Kontener">Kontener</th>
+          <th data-label="Obraz">Obraz</th>
+          <th data-label="Status">Status</th>
+          <th data-label="Porty">Porty</th>
+          <th data-label="Akcje">Akcje</th>
+        </tr>
+      </thead>
+      <tbody id="dockerBody">
+        <tr>
+          <td colspan="5" class="loading">Ładowanie kontenerów...</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ========== APPLICATION LOGS SECTION ========== -->
+  <h1>📋 Logi Programu</h1>
+  <div class="table-container">
+    <div style="padding: var(--spacing-lg);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-md); flex-wrap: wrap; gap: var(--spacing-sm);">
+        <h2 style="color: var(--purple); font-size: 16px; margin: 0;">Logi Aplikacji PowerControl</h2>
+        <div style="display: flex; gap: var(--spacing-sm); align-items: center; flex-wrap: wrap;">
+          <label style="display: flex; align-items: center; gap: var(--spacing-xs); font-size: 12px;">
+            <span>Linie:</span>
+            <select id="logsLinesSelect" onchange="LogsController.updateSettings()" style="background: var(--card); color: var(--fg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px 8px; font-size: 12px;">
+              <option value="50">50</option>
+              <option value="100" selected>100</option>
+              <option value="200">200</option>
+              <option value="500">500</option>
+            </select>
+          </label>
+          <label style="display: flex; align-items: center; gap: var(--spacing-xs); font-size: 12px;">
+            <span>Poziom:</span>
+            <select id="logsLevelSelect" onchange="LogsController.updateSettings()" style="background: var(--card); color: var(--fg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px 8px; font-size: 12px;">
+              <option value="">Wszystkie</option>
+              <option value="DEBUG">DEBUG</option>
+              <option value="INFO">INFO</option>
+              <option value="WARNING">WARNING</option>
+              <option value="ERROR">ERROR</option>
+              <option value="CRITICAL">CRITICAL</option>
+            </select>
+          </label>
+          <button 
+            onclick="LogsController.toggleAutoRefresh()" 
+            id="logsAutoRefreshBtn"
+            class="small secondary"
+            style="font-size: 11px; padding: 4px 8px;">
+            ⏸️ Auto-odświeżanie: OFF
+          </button>
+          <button 
+            onclick="LogsController.refresh()" 
+            class="small"
+            style="font-size: 11px; padding: 4px 8px;">
+            🔄 Odśwież
+          </button>
+          <button 
+            onclick="LogsController.clearDisplay()" 
+            class="small secondary"
+            style="font-size: 11px; padding: 4px 8px;">
+            🗑️ Wyczyść
+          </button>
+        </div>
+      </div>
+      
+      <div id="logsInfo" style="font-size: 11px; color: var(--muted); margin-bottom: var(--spacing-sm);">
+        Ładowanie logów...
+      </div>
+      
+      <div 
+        id="logsDisplay" 
+        style="
+          background: var(--card); 
+          border: 1px solid var(--border); 
+          border-radius: var(--radius-md); 
+          padding: var(--spacing-md); 
+          font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+          font-size: 11px;
+          color: var(--fg);
+          max-height: 600px;
+          overflow-y: auto;
+          overflow-x: auto;
+          white-space: pre-wrap;
+          word-wrap: break-word;
+          line-height: 1.4;
+        ">
+        Ładowanie logów...
+      </div>
+    </div>
+  </div>
+
   <!-- ========== MANUAL SECTION ========== -->
   <div class="manual-section">
     <h1>📋 Konfiguracja Przekaźników (Opis)</h1>
@@ -776,6 +924,65 @@ Przekaźnik 8 - SW03(Prox02)</textarea>
   <script>
     'use strict';
 
+    // ========== PROXY ERROR SUPPRESSION ==========
+    // Mechanizm tłumienia powtarzających się błędów proxy
+    (function() {
+      const suppressedErrors = new Set();
+      const originalConsoleError = console.error;
+      const originalConsoleWarn = console.warn;
+      
+      // Tłumienie powtarzających się błędów proxy
+      function shouldSuppressError(message, lineno) {
+        if (lineno === 2 && lineno <= 10) {
+          const errorKey = `${message}:${lineno}`;
+          if (suppressedErrors.has(errorKey)) {
+            return true;
+          }
+          if (message && (message.includes("expected expression") || message.includes("got '}'"))) {
+            suppressedErrors.add(errorKey);
+            return false; // Pierwsze wystąpienie - pozwól zalogować, ale zapisz
+          }
+        }
+        return false;
+      }
+      
+      // Nadpisz console.error aby tłumić powtarzające się błędy proxy
+      console.error = function(...args) {
+        const message = args.join(' ');
+        // Sprawdź czy to błąd proxy który już obsłużyliśmy
+        if (message.includes("expected expression") || message.includes("got '}'")) {
+          // Sprawdź stack trace aby znaleźć numer linii
+          const stack = new Error().stack;
+          if (stack && (stack.includes(':2:') || stack.includes(':2:1'))) {
+            const errorKey = `proxy-error:${message}`;
+            if (suppressedErrors.has(errorKey)) {
+              return; // Tłum powtarzające się błędy
+            }
+            suppressedErrors.add(errorKey);
+            // Całkowicie wycisz błędy proxy - nie loguj nic
+            return;
+          }
+        }
+        originalConsoleError.apply(console, args);
+      };
+      
+      // Nadpisz console.warn aby tłumić powtarzające się ostrzeżenia proxy
+      console.warn = function(...args) {
+        const message = args.join(' ');
+          if (message.includes("Proxy-related syntax error") || message.includes("Proxy-related error") || 
+            message.includes("expected expression") || message.includes("got '}'")) {
+          const errorKey = `proxy-warn:${message}`;
+          if (suppressedErrors.has(errorKey)) {
+            return; // Całkowicie tłum powtarzające się ostrzeżenia - nie loguj nic
+          }
+          suppressedErrors.add(errorKey);
+          // Całkowicie wycisz - nie loguj nawet pierwszego wystąpienia
+          return;
+        }
+        originalConsoleWarn.apply(console, args);
+      };
+    })();
+
     // ========== CONFIGURATION ========== (OPTIMIZED FOR PERFORMANCE)
     const CONFIG = {
       POLL_INTERVAL_RELAYS: 3000,          // 2s → 5s (zmniejszenie obciążenia)
@@ -789,13 +996,23 @@ Przekaźnik 8 - SW03(Prox02)</textarea>
       // Tab visibility intervals (gdy karta aktywna)
       ACTIVE_MULTIPLIER: 1,
       // Tab visibility intervals (gdy karta nieaktywna - dramatycznie rzadziej)
-      INACTIVE_MULTIPLIER: 5  // 5x rzadziej gdy nieaktywna
+      INACTIVE_MULTIPLIER: 5,  // 5x rzadziej gdy nieaktywna
+      
+      // Intelligent VM refresh configuration
+      VM_REFRESH_BASE: 7000,              // Bazowy interwał (7s)
+      VM_REFRESH_STABLE: 15000,           // Gdy brak zmian (15s)
+      VM_REFRESH_QUIET: 30000,            // Gdy długo brak zmian (30s)
+      VM_REFRESH_IDLE: 60000,             // Gdy bardzo długo brak zmian (60s)
+      VM_REFRESH_MAX: 60000,              // Maksymalny interwał (60s)
+      VM_CHANGE_DETECTION_CYCLES: 3,      // Liczba cykli bez zmian przed zwiększeniem interwału
+      VM_RUNNING_PRIORITY_MULTIPLIER: 0.7 // Running VM odświeżane częściej (70% interwału)
     };
 
     // ========== TAB VISIBILITY DETECTION ==========
     const VisibilityManager = {
       isVisible: true,
       intervalIds: {},
+      sseActive: false,
       
       init() {
         document.addEventListener('visibilitychange', this.handleVisibilityChange.bind(this));
@@ -808,6 +1025,12 @@ Przekaźnik 8 - SW03(Prox02)</textarea>
       },
       
       handleVisibilityChange() {
+        if (this.sseActive) {
+          // przy SSE nie zmieniamy interwałów, ale informujemy UI
+          this.isVisible = !document.hidden;
+          this.updateVisibilityUI();
+          return;
+        }
         const wasVisible = this.isVisible;
         this.isVisible = !document.hidden;
         
@@ -827,10 +1050,14 @@ Przekaźnik 8 - SW03(Prox02)</textarea>
       },
       
       pausePolling() {
+        if (this.sseActive) return;
         // Zatrzymaj wszystkie timery
         Object.values(this.intervalIds).forEach(id => {
           if (id) clearInterval(id);
         });
+        
+        // Zatrzymaj adaptacyjne odświeżanie VM
+        VMController.stopAdaptiveRefresh();
         
         // Ustaw znacznie rzadsze interwały dla kart w tle
         this.intervalIds.relayPoll = setInterval(
@@ -848,6 +1075,7 @@ Przekaźnik 8 - SW03(Prox02)</textarea>
       },
       
       resumePolling() {
+        if (this.sseActive) return;
         // Zatrzymaj stare timery
         Object.values(this.intervalIds).forEach(id => {
           if (id) clearInterval(id);
@@ -858,7 +1086,28 @@ Przekaźnik 8 - SW03(Prox02)</textarea>
         this.intervalIds.notificationsFetch = setInterval(NotificationController.fetchStates, CONFIG.POLL_INTERVAL_NOTIFICATIONS);
         this.intervalIds.hostsList = setInterval(HostController.load.bind(HostController), CONFIG.POLL_INTERVAL_HOSTS);
         this.intervalIds.hostsAutoPing = setInterval(HostController.autoPingAll.bind(HostController), CONFIG.PING_INTERVAL_HOSTS);
-        this.intervalIds.vmsList = setInterval(VMController.load.bind(VMController), CONFIG.POLL_INTERVAL_VMS);
+        
+        // Uruchom adaptacyjne odświeżanie VM zamiast stałego interwału
+        VMController.startAdaptiveRefresh();
+      },
+      
+      stopPolling() {
+        Object.values(this.intervalIds).forEach(id => {
+          if (id) clearInterval(id);
+        });
+        this.intervalIds = {};
+      },
+      
+      setSSEActive(active) {
+        this.sseActive = active;
+        if (active) {
+          this.stopPolling();
+          VMController.stopAdaptiveRefresh();
+        } else if (this.isVisible) {
+          this.resumePolling();
+        } else {
+          this.pausePolling();
+        }
       },
       
       updateVisibilityUI() {
@@ -912,8 +1161,81 @@ Przekaźnik 8 - SW03(Prox02)</textarea>
       }
     };
 
+    // ========== SSE (Server-Sent Events) ==========
+    const SSEController = {
+      es: null,
+      connected: false,
+      retryTimer: null,
+      init() {
+        if (!window.EventSource) {
+          console.warn('EventSource not supported, staying on polling');
+          return;
+        }
+        this.connect();
+      },
+      connect() {
+        if (this.es) {
+          try { this.es.close(); } catch (e) {}
+        }
+        this.es = new EventSource('/events');
+        this.es.onopen = () => {
+          this.connected = true;
+          console.log('SSE connected');
+          VisibilityManager.setSSEActive(true);
+          Utils.showToast('🔌 Połączono SSE (live)');
+        };
+        this.es.onerror = () => {
+          console.warn('SSE error, falling back to polling');
+          this.connected = false;
+          VisibilityManager.setSSEActive(false);
+          try { this.es.close(); } catch (e) {}
+          clearTimeout(this.retryTimer);
+          this.retryTimer = setTimeout(() => this.connect(), 5000);
+        };
+        this.es.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data || '{}');
+            this.handle(data);
+          } catch (e) {
+            console.debug('SSE parse error', e);
+          }
+        };
+      },
+      handle(payload) {
+        if (!payload || !payload.type) return;
+        switch (payload.type) {
+          case 'relays':
+            RelayController.applySnapshot(payload.relays || []);
+            break;
+          case 'hosts':
+            HostController.renderSnapshot(payload.hosts || []);
+            break;
+          case 'vms':
+            // Dla SSE, również aktualizuj snapshot i resetuj interwał
+            const vms = payload.vms || [];
+            const hasChanges = VMController.detectChanges(vms);
+            if (hasChanges) {
+              VMController.noChangeCycles = 0;
+              VMController.currentInterval = CONFIG.VM_REFRESH_BASE;
+            }
+            // Zawsze renderuj dla SSE (dane przychodzą z serwera)
+            VMController.renderSnapshot(vms);
+            break;
+          default:
+            break;
+        }
+      }
+    };
+
     // ========== UTILITIES ==========
     const Utils = {
+      escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      },
+      
       showToast(message) {
         const toast = document.getElementById('toast');
         if (!toast) return;
@@ -956,19 +1278,50 @@ Przekaźnik 8 - SW03(Prox02)</textarea>
       },
 
       async fetchJSON(url, options = {}) {
-        const response = await fetch(url, {
-          headers: {
-            'Content-Type': 'application/json',
-            ...options.headers
-          },
-          ...options
-        });
-        
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        try {
+          const response = await fetch(url, {
+            headers: {
+              'Content-Type': 'application/json',
+              ...options.headers
+            },
+            ...options
+          });
+          
+          // Sprawdź czy response ma content-type JSON
+          const contentType = response.headers.get('content-type');
+          const isJson = contentType && contentType.includes('application/json');
+          
+          if (!response.ok) {
+            let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+            // Spróbuj wyciągnąć szczegóły błędu z JSON jeśli dostępne
+            if (isJson) {
+              try {
+                const errorData = await response.json();
+                errorMessage = errorData.error || errorData.message || errorMessage;
+              } catch (e) {
+                // Nie można sparsować JSON, użyj domyślnego komunikatu
+              }
+            }
+            const error = new Error(errorMessage);
+            error.status = response.status;
+            error.response = response;
+            throw error;
+          }
+          
+          if (isJson) {
+            return await response.json();
+          } else {
+            // Jeśli nie ma JSON, zwróć pusty obiekt
+            const text = await response.text();
+            return { success: true, data: text };
+          }
+        } catch (error) {
+          // Oznacz błąd jako obsłużony jeśli to jest błąd sieciowy
+          if (error.name === 'TypeError' && error.message.includes('fetch')) {
+            error._handled = true;
+          }
+          throw error;
         }
-        
-        return response.json();
       },
 
       debounce(func, delay) {
@@ -988,6 +1341,13 @@ Przekaźnik 8 - SW03(Prox02)</textarea>
 
     // ========== RELAY MANAGEMENT ==========
     const RelayController = {
+      applySnapshot(relays) {
+        if (!Array.isArray(relays)) return;
+        relays.forEach(relay => {
+          if (!relay) return;
+          RelayController.updateUI(relay.id, !!relay.on);
+        });
+      },
       updateUI(relayId, isOn) {
         const row = document.getElementById(`relay-row-${relayId}`);
         if (!row) return;
@@ -1063,6 +1423,161 @@ Przekaźnik 8 - SW03(Prox02)</textarea>
       }
     };
 
+    // ========== QUICK START VM ==========
+    const QuickStartVM = {
+      // Zapisz ostatni wybór VM dla przekaźnika (współdzielony między urządzeniami)
+      async saveLastChoice(relayId, vmid) {
+        try {
+          await Utils.fetchJSON('/quick_start/choice', {
+            method: 'POST',
+            body: JSON.stringify({
+              relay_id: relayId,
+              vmid: vmid
+            })
+          });
+        } catch (e) {
+          console.debug('Failed to save quick start choice:', e);
+        }
+      },
+      
+      // Przywróć ostatni wybór VM dla przekaźnika (współdzielony między urządzeniami)
+      async restoreLastChoice(relayId) {
+        try {
+          const data = await Utils.fetchJSON('/quick_start/choice');
+          if (data?.success && data.choices) {
+            const saved = data.choices[String(relayId)];
+            if (saved) {
+              const select = document.getElementById(`vm-select-${relayId}`);
+              if (select) {
+                // Sprawdź czy zapisana wartość istnieje w opcjach
+                const optionExists = Array.from(select.options).some(opt => opt.value === String(saved));
+                if (optionExists) {
+                  select.value = String(saved);
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.debug('Failed to restore quick start choice:', e);
+        }
+      },
+      
+      // Przywróć wybory dla wszystkich przekaźników
+      async restoreAllChoices() {
+        await Promise.all([
+          this.restoreLastChoice(2),
+          this.restoreLastChoice(8)
+        ]);
+      }
+    };
+    
+    async function quickStartVM(relayId, button) {
+      const select = document.getElementById(`vm-select-${relayId}`);
+      if (!select) {
+        alert('Błąd: Nie znaleziono listy wyboru VM');
+        return;
+      }
+      
+      const vmid = select.value;
+      if (!vmid) {
+        alert('Proszę wybrać VM z listy');
+        return;
+      }
+      
+      // Zapisz wybór do backendu (współdzielony między urządzeniami)
+      await QuickStartVM.saveLastChoice(relayId, vmid);
+      
+      const originalText = button.textContent;
+      button.disabled = true;
+      button.textContent = '⏳ Czekam...';
+      select.disabled = true;
+      
+      try {
+        Utils.showToast(`🚀 Uruchamianie szybkiego startu: Przekaźnik ${relayId} → VM ${vmid}`);
+        
+        const data = await Utils.fetchJSON(`/relay/${relayId}/quick_start`, {
+          method: 'POST',
+          body: JSON.stringify({
+            vmid: parseInt(vmid),
+            type: 'qemu'  // Node jest automatycznie wykrywany na podstawie relay ID
+          })
+        });
+        
+        if (data?.success) {
+          const taskid = data.taskid ? ` (task: ${data.taskid})` : '';
+          Utils.showToast(`✅ Szybki start zakończony: Przekaźnik ${relayId} włączony, Proxmox gotowy, VM ${vmid} uruchomiony${taskid}`);
+          
+          // Odśwież status przekaźników i VM po krótkiej chwili
+          setTimeout(() => {
+            RelayController.pollStatus();
+            if (typeof VMController !== 'undefined' && VMController.load) {
+              VMController.load();
+            }
+          }, 2000);
+        } else {
+          throw new Error(data?.error || 'Nieznany błąd');
+        }
+      } catch (error) {
+        console.error('Quick start error:', error);
+        alert(`Błąd szybkiego startu: ${error.message}`);
+      } finally {
+        button.disabled = false;
+        button.textContent = originalText;
+        select.disabled = false;
+      }
+    }
+    
+    // ========== QUICK SHUTDOWN VM ==========
+    async function quickShutdownVM(relayId, button) {
+      if (!confirm(`⚠️ Czy na pewno chcesz wykonać szybkie wyłączenie dla przekaźnika ${relayId}?\n\nTo spowoduje:\n1. Wyłączenie wszystkich uruchomionych VM\n2. Wyłączenie Proxmox node\n3. Wyłączenie przekaźnika po 5 minutach\n\nOperacja jest nieodwracalna!`)) {
+        return;
+      }
+      
+      const originalText = button.textContent;
+      button.disabled = true;
+      button.textContent = '⏳ Wyłączanie...';
+      
+      try {
+        Utils.showToast(`🛑 Rozpoczynam szybkie wyłączenie: Przekaźnik ${relayId}`);
+        
+        const data = await Utils.fetchJSON(`/relay/${relayId}/quick_shutdown`, {
+          method: 'POST'
+        });
+        
+        if (data?.success) {
+          const vmsCount = data.vms_shutdown || 0;
+          const waitTime = data.relay_will_off_in_seconds || 300;
+          const waitMinutes = Math.floor(waitTime / 60);
+          
+          Utils.showToast(`✅ Sekwencja wyłączenia rozpoczęta: ${vmsCount} VM wyłączonych, node wyłączony, przekaźnik ${relayId} wyłączy się za ${waitMinutes} minut`);
+          
+          // Odśwież status przekaźników i VM po krótkiej chwili
+          setTimeout(() => {
+            RelayController.pollStatus();
+            if (typeof VMController !== 'undefined' && VMController.load) {
+              VMController.load();
+            }
+          }, 2000);
+          
+          // Pokaż dodatkowe informacje
+          if (data.vm_results && data.vm_results.length > 0) {
+            const failed = data.vm_results.filter(r => !r.success);
+            if (failed.length > 0) {
+              console.warn('Some VMs failed to shutdown:', failed);
+            }
+          }
+        } else {
+          throw new Error(data?.error || 'Nieznany błąd');
+        }
+      } catch (error) {
+        console.error('Quick shutdown error:', error);
+        alert(`Błąd szybkiego wyłączenia: ${error.message}`);
+      } finally {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    }
+
     // ========== NOTIFICATION MANAGEMENT ==========
     const NotificationController = {
       applyButtonState(button, enabled) {
@@ -1127,6 +1642,51 @@ Przekaźnik 8 - SW03(Prox02)</textarea>
       hosts: new Map(),
       pingStates: new Map(),
 
+      renderSnapshot(hosts = []) {
+        const tbody = document.getElementById('hostsBody');
+        if (!tbody) return;
+
+        if (!hosts.length) {
+          tbody.innerHTML = '<tr><td colspan="5">📭 Brak skonfigurowanych hostów</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = '';
+        hosts.forEach(host => {
+          const row = document.createElement('tr');
+          const hostId = host.hostname || host.name;
+          const status = host.status || 'unknown';
+          const pingStatus = this.pingStates.get(hostId) || status || 'unknown';
+
+          row.innerHTML = `
+            <td data-label="Host"><strong>${hostId}</strong></td>
+            <td data-label="Adres IP"><code>${host.ip || ''}</code></td>
+            <td data-label="MAC"><code>${host.mac || '—'}</code></td>
+            <td data-label="Status" class="status-cell">
+              ${this.renderStatusBadge(status)}
+              ${this.renderPingButton(hostId, pingStatus)}
+            </td>
+            <td data-label="Akcje">
+              <button onclick="HostController.wake('${hostId}')" title="Wake on LAN">
+                🌅 WOL
+              </button>
+              <button onclick="HostController.shutdown('${hostId}')" class="secondary" title="Shutdown via SSH">
+                🛑 Shutdown
+              </button>
+              <button onclick="HostController.reboot('${hostId}')" class="secondary" title="Restart via SSH">
+                🔄 Restart
+              </button>
+            </td>
+          `;
+          tbody.appendChild(row);
+          this.hosts.set(hostId, host);
+
+          // zapamiętaj status do kolorowania przycisku ping
+          const pingState = status === 'online' ? 'online' : status === 'offline' ? 'offline' : 'unknown';
+          this.pingStates.set(hostId, pingState);
+        });
+      },
+
       renderStatusBadge(status) {
         const statusClass = status === 'online' ? 'online' : 
                            status === 'offline' ? 'offline' : 'unknown';
@@ -1168,38 +1728,7 @@ Przekaźnik 8 - SW03(Prox02)</textarea>
             return;
           }
           
-          tbody.innerHTML = '';
-          hosts.forEach(host => {
-            const row = document.createElement('tr');
-            const hostId = host.hostname || host.name;
-            const pingStatus = this.pingStates.get(hostId) || 'unknown';
-            const overallStatus = host.status || pingStatus;
-            
-            row.innerHTML = `
-              <td data-label="Host"><strong>${hostId}</strong></td>
-              <td data-label="Adres IP"><code>${host.ip}</code></td>
-              <td data-label="MAC"><code>${host.mac || '—'}</code></td>
-              <td data-label="Status" class="status-cell">
-                ${this.renderStatusBadge(overallStatus)}
-                ${this.renderPingButton(hostId, pingStatus)}
-              </td>
-              <td data-label="Akcje">
-                <button onclick="HostController.wake('${hostId}')" title="Wake on LAN">
-                  🌅 WOL
-                </button>
-                <button onclick="HostController.shutdown('${hostId}')" class="secondary" title="Shutdown via SSH">
-                  🛑 Shutdown
-                </button>
-                <button onclick="HostController.reboot('${hostId}')" class="secondary" title="Restart via SSH">
-                  🔄 Restart
-                </button>
-              </td>
-            `;
-            tbody.appendChild(row);
-            
-            // Store host data
-            this.hosts.set(hostId, host);
-          });
+          this.renderSnapshot(hosts);
         } catch (error) {
           console.error('Host loading error:', error);
           tbody.innerHTML = '<tr><td colspan="5">❌ Błąd połączenia z serwerem</td></tr>';
@@ -1318,7 +1847,7 @@ Przekaźnik 8 - SW03(Prox02)</textarea>
           return;
         }
         
-        console.log('🔍 Auto-ping wszystkich hostów (co 5 minut)');
+        console.debug('🔍 Auto-ping wszystkich hostów (co 5 minut)');
         
         // Automatically ping all hosts periodically
         this.hosts.forEach(async (host, hostId) => {
@@ -1365,10 +1894,178 @@ Przekaźnik 8 - SW03(Prox02)</textarea>
       }
     };
 
-    // ========== VM MANAGEMENT ========== (podobny kod jak poprzednio, bez zmian)
+    // ========== VM MANAGEMENT ========== (INTELLIGENT REFRESH)
     const VMController = {
       vmOrder: new Map(),
       nextIndex: 0,
+      lastSnapshotHash: null,         // Hash ostatniego snapshotu dla wykrywania zmian
+      lastVMs: null,                   // Ostatnia lista VM dla obliczeń interwału
+      noChangeCycles: 0,               // Licznik cykli bez zmian
+      currentInterval: CONFIG.VM_REFRESH_BASE,  // Aktualny interwał odświeżania
+      refreshTimer: null,              // Timer dla adaptacyjnego odświeżania
+
+      // Tworzy hash snapshotu dla szybkiego porównania
+      createSnapshotHash(vms) {
+        if (!vms || !vms.length) return '';
+        // Tworzy hash z kluczowych danych: node|type|vmid|status|uptime
+        return vms.map(vm => 
+          `${vm.node}|${vm.type}|${vm.vmid}|${(vm.status || '').toLowerCase()}|${vm.uptime || 0}`
+        ).sort().join('||');
+      },
+
+      // Wykrywa zmiany w snapshotach
+      detectChanges(newVms) {
+        const newHash = this.createSnapshotHash(newVms);
+        const oldHash = this.lastSnapshotHash;
+        
+        if (oldHash === null) {
+          // Pierwsze załadowanie
+          this.lastSnapshotHash = newHash;
+          this.lastVMs = newVms;
+          return true; // Traktuj jako zmianę aby zresetować interwał
+        }
+        
+        const hasChanges = newHash !== oldHash;
+        this.lastSnapshotHash = newHash;
+        this.lastVMs = newVms;
+        return hasChanges;
+      },
+
+      // Oblicza optymalny interwał na podstawie stanu VM
+      calculateOptimalInterval(vms) {
+        if (!vms || !vms.length) {
+          return CONFIG.VM_REFRESH_IDLE; // Brak VM = bardzo rzadko
+        }
+
+        // Sprawdź ile VM jest running
+        const runningCount = vms.filter(vm => 
+          (vm.status || '').toLowerCase() === 'running'
+        ).length;
+        
+        const totalCount = vms.length;
+        const runningRatio = totalCount > 0 ? runningCount / totalCount : 0;
+
+        // Jeśli wszystkie VM są stopped, używaj dłuższych interwałów
+        if (runningCount === 0) {
+          // Wszystkie stopped - użyj dłuższych interwałów
+          if (this.noChangeCycles >= CONFIG.VM_CHANGE_DETECTION_CYCLES * 3) {
+            return CONFIG.VM_REFRESH_IDLE; // 60s
+          } else if (this.noChangeCycles >= CONFIG.VM_CHANGE_DETECTION_CYCLES * 2) {
+            return CONFIG.VM_REFRESH_QUIET; // 30s
+          } else if (this.noChangeCycles >= CONFIG.VM_CHANGE_DETECTION_CYCLES) {
+            return CONFIG.VM_REFRESH_STABLE; // 15s
+          }
+          return CONFIG.VM_REFRESH_BASE; // 7s
+        }
+
+        // Są running VM - dostosuj interwał
+        let baseInterval = CONFIG.VM_REFRESH_BASE;
+        
+        // Zastosuj exponential backoff jeśli brak zmian
+        if (this.noChangeCycles >= CONFIG.VM_CHANGE_DETECTION_CYCLES * 3) {
+          baseInterval = CONFIG.VM_REFRESH_IDLE;
+        } else if (this.noChangeCycles >= CONFIG.VM_CHANGE_DETECTION_CYCLES * 2) {
+          baseInterval = CONFIG.VM_REFRESH_QUIET;
+        } else if (this.noChangeCycles >= CONFIG.VM_CHANGE_DETECTION_CYCLES) {
+          baseInterval = CONFIG.VM_REFRESH_STABLE;
+        }
+        
+        // Jeśli są running VM, zmniejsz interwał (priorytet dla aktywnych)
+        if (runningRatio > 0.5) {
+          baseInterval = Math.floor(baseInterval * CONFIG.VM_RUNNING_PRIORITY_MULTIPLIER);
+          // Upewnij się, że nie spadnie poniżej minimum
+          baseInterval = Math.max(CONFIG.VM_REFRESH_BASE, baseInterval);
+        }
+
+        return baseInterval;
+      },
+
+      // Uruchamia adaptacyjne odświeżanie
+      startAdaptiveRefresh() {
+        this.stopAdaptiveRefresh();
+        
+        const scheduleNext = () => {
+          if (!VisibilityManager.isVisible) {
+            return; // Nie planuj jeśli karta nieaktywna
+          }
+          
+          this.refreshTimer = setTimeout(() => {
+            this.load().then(() => {
+              // Zaplanuj następne odświeżanie z nowym interwałem
+              // Użyj ostatniej listy VM lub danych z localStorage jako fallback
+              const vmsForCalc = this.lastVMs || 
+                (localStorage.getItem('vm_last_data') ? 
+                  JSON.parse(localStorage.getItem('vm_last_data')) : []);
+              this.currentInterval = this.calculateOptimalInterval(vmsForCalc);
+              scheduleNext();
+            }).catch(err => {
+              console.debug('VM adaptive refresh error:', err);
+              // W przypadku błędu, użyj bazowego interwału
+              this.currentInterval = CONFIG.VM_REFRESH_BASE;
+              scheduleNext();
+            });
+          }, this.currentInterval);
+        };
+        
+        scheduleNext();
+      },
+
+      // Zatrzymuje adaptacyjne odświeżanie
+      stopAdaptiveRefresh() {
+        if (this.refreshTimer) {
+          clearTimeout(this.refreshTimer);
+          this.refreshTimer = null;
+        }
+      },
+
+      renderSnapshot(vms = []) {
+        const tbody = document.getElementById('vmsBody');
+        if (!tbody) return;
+
+        vms = this.ensureOrder(vms || []);
+
+        if (!vms.length) {
+          tbody.innerHTML = '<tr><td colspan="8">📭 Brak maszyn wirtualnych</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = '';
+        vms.forEach(vm => {
+          const row = document.createElement('tr');
+          const status = (vm.status || '').toLowerCase();
+          const badgeClass = status === 'running' ? 'running' : 
+                           (status === 'stopped' || status === 'shutdown') ? 'stopped' : 'paused';
+          const ipsHtml = this.renderIPs(vm.ips || []);
+          
+          row.innerHTML = `
+            <td data-label="Węzeł"><strong>${vm.node || ''}</strong></td>
+            <td data-label="Typ"><code>${(vm.type || '').toUpperCase()}</code></td>
+            <td data-label="VMID"><code>${vm.vmid || ''}</code></td>
+            <td data-label="Nazwa">${vm.name || ''}</td>
+            <td data-label="Status">
+              <span class="badge ${badgeClass}">${status || '—'}</span>
+            </td>
+            <td data-label="Uptime">${Utils.formatUptime(vm.uptime || 0)}</td>
+            <td data-label="Adresy IP">${ipsHtml}</td>
+            <td data-label="Akcje">
+              <button data-act onclick="VMController.performAction('${vm.node}','${vm.type}',${vm.vmid},'start', this)" title="Uruchom maszynę">
+                ▶️ Start
+              </button>
+              <button data-act onclick="VMController.performAction('${vm.node}','${vm.type}',${vm.vmid},'shutdown', this)" class="secondary" title="Wyłącz maszynę">
+                🛑 Shutdown
+              </button>
+              <button data-act onclick="VMController.performAction('${vm.node}','${vm.type}',${vm.vmid},'stop', this)" class="secondary" title="Wymuś zatrzymanie">
+                ⏹️ Stop
+              </button>
+              ${vm.type === 'qemu' ? `
+              <button data-act onclick="VMController.performAction('${vm.node}','${vm.type}',${vm.vmid},'reset', this)" class="secondary" title="Restart maszyny">
+                🔄 Reset
+              </button>` : ''}
+            </td>
+          `;
+          tbody.appendChild(row);
+        });
+      },
 
       getVMKey(vm) {
         return `${vm.node || ''}|${vm.type || ''}|${vm.vmid || ''}`;
@@ -1439,56 +2136,49 @@ Przekaźnik 8 - SW03(Prox02)</textarea>
           
           if (!data.success) {
             tbody.innerHTML = `<tr><td colspan="8">❌ Błąd: ${data.error || 'brak szczegółów'}</td></tr>`;
+            // W przypadku błędu, zwiększ interwał
+            this.noChangeCycles++;
+            this.currentInterval = Math.min(this.currentInterval * 1.5, CONFIG.VM_REFRESH_MAX);
             return;
           }
           
           let vms = data.vms || [];
-          vms = this.ensureOrder(vms);
           
-          if (!vms.length) {
-            tbody.innerHTML = '<tr><td colspan="8">📭 Brak maszyn wirtualnych</td></tr>';
-            return;
+          // Wykryj zmiany
+          const hasChanges = this.detectChanges(vms);
+          
+          if (hasChanges) {
+            // Wykryto zmiany - zresetuj interwał i licznik
+            this.noChangeCycles = 0;
+            this.currentInterval = CONFIG.VM_REFRESH_BASE;
+            console.debug('🔄 VM: Wykryto zmiany - reset interwału do', this.currentInterval, 'ms');
+          } else {
+            // Brak zmian - zwiększ licznik
+            this.noChangeCycles++;
+            const newInterval = this.calculateOptimalInterval(vms);
+            if (newInterval !== this.currentInterval) {
+              console.debug(`📊 VM: Brak zmian (${this.noChangeCycles} cykli) - interwał: ${this.currentInterval}ms → ${newInterval}ms`);
+              this.currentInterval = newInterval;
+            }
           }
           
-          tbody.innerHTML = '';
-          vms.forEach(vm => {
-            const row = document.createElement('tr');
-            const status = (vm.status || '').toLowerCase();
-            const badgeClass = status === 'running' ? 'running' : 
-                             (status === 'stopped' || status === 'shutdown') ? 'stopped' : 'paused';
-            const ipsHtml = this.renderIPs(vm.ips || []);
-            
-            row.innerHTML = `
-              <td data-label="Węzeł"><strong>${vm.node || ''}</strong></td>
-              <td data-label="Typ"><code>${(vm.type || '').toUpperCase()}</code></td>
-              <td data-label="VMID"><code>${vm.vmid || ''}</code></td>
-              <td data-label="Nazwa">${vm.name || ''}</td>
-              <td data-label="Status">
-                <span class="badge ${badgeClass}">${status || '—'}</span>
-              </td>
-              <td data-label="Uptime">${Utils.formatUptime(vm.uptime || 0)}</td>
-              <td data-label="Adresy IP">${ipsHtml}</td>
-              <td data-label="Akcje">
-                <button data-act onclick="VMController.performAction('${vm.node}','${vm.type}',${vm.vmid},'start', this)" title="Uruchom maszynę">
-                  ▶️ Start
-                </button>
-                <button data-act onclick="VMController.performAction('${vm.node}','${vm.type}',${vm.vmid},'shutdown', this)" class="secondary" title="Wyłącz maszynę">
-                  🛑 Shutdown
-                </button>
-                <button data-act onclick="VMController.performAction('${vm.node}','${vm.type}',${vm.vmid},'stop', this)" class="secondary" title="Wymuś zatrzymanie">
-                  ⏹️ Stop
-                </button>
-                ${vm.type === 'qemu' ? `
-                <button data-act onclick="VMController.performAction('${vm.node}','${vm.type}',${vm.vmid},'reset', this)" class="secondary" title="Restart maszyny">
-                  🔄 Reset
-                </button>` : ''}
-              </td>
-            `;
-            tbody.appendChild(row);
-          });
+          // Zapisz dane do localStorage dla obliczeń interwału
+          try {
+            localStorage.setItem('vm_last_data', JSON.stringify(vms));
+          } catch (e) {
+            // Ignoruj błędy localStorage
+          }
+          
+          // Renderuj tylko jeśli są zmiany lub to pierwsze załadowanie
+          if (hasChanges || this.lastSnapshotHash === null) {
+            this.renderSnapshot(vms);
+          }
         } catch (error) {
           console.error('VM loading error:', error);
           tbody.innerHTML = '<tr><td colspan="8">❌ Błąd połączenia z Proxmox</td></tr>';
+          // W przypadku błędu, zwiększ interwał
+          this.noChangeCycles++;
+          this.currentInterval = Math.min(this.currentInterval * 1.5, CONFIG.VM_REFRESH_MAX);
         }
       },
 
@@ -1524,14 +2214,587 @@ Przekaźnik 8 - SW03(Prox02)</textarea>
       }
     };
 
+    // ========== SYSTEMD SERVICES MANAGEMENT ==========
+    const ServicesController = {
+      services: new Map(),
+      
+      renderSnapshot(services = []) {
+        const tbody = document.getElementById('servicesBody');
+        if (!tbody) return;
+        
+        if (!services.length) {
+          tbody.innerHTML = '<tr><td colspan="4">📭 Brak skonfigurowanych usług</td></tr>';
+          return;
+        }
+        
+        tbody.innerHTML = '';
+        services.forEach(service => {
+          const row = document.createElement('tr');
+          const status = service.status || 'inactive';
+          const statusClass = status === 'active' ? 'online' : 'offline';
+          const statusText = status === 'active' ? 'Aktywna' : 'Nieaktywna';
+          const serviceName = Utils.escapeHtml(service.name || '');
+          const serviceService = Utils.escapeHtml(service.service || '');
+          const serviceDesc = Utils.escapeHtml(service.description || '');
+          
+          // Bezpieczne escapowanie dla JavaScript (zamiana pojedynczych cudzysłowów)
+          const serviceNameJs = (service.name || '').replace(/'/g, "\\'").replace(/\\/g, "\\\\");
+          const serviceNameAttr = (service.name || '').replace(/"/g, "&quot;");
+          
+          const isActive = status === 'active';
+          
+          row.innerHTML = `
+            <td data-label="Usługa">
+              <strong>${serviceName}</strong>
+              ${serviceDesc ? `<br><small style="color: var(--muted);">${serviceDesc}</small>` : ''}
+            </td>
+            <td data-label="Nazwa systemd"><code>${serviceService}</code></td>
+            <td data-label="Status" class="status-cell">
+              <span class="status-indicator ${statusClass}"></span>
+              <span class="badge ${statusClass}">${statusText}</span>
+            </td>
+            <td data-label="Akcje">
+              <button 
+                ${isActive ? 'disabled' : ''}
+                id="service-${serviceNameAttr}-start"
+                class="service-action-btn"
+                data-service="${serviceNameAttr}"
+                data-action="start"
+                onclick="ServicesController.action('${serviceNameJs}', 'start', this)"
+                title="Uruchom usługę">
+                ▶️ Start
+              </button>
+              <button 
+                class="secondary service-action-btn" 
+                ${!isActive ? 'disabled' : ''}
+                id="service-${serviceNameAttr}-stop"
+                data-service="${serviceNameAttr}"
+                data-action="stop"
+                onclick="ServicesController.action('${serviceNameJs}', 'stop', this)"
+                title="Zatrzymaj usługę">
+                ⏹️ Stop
+              </button>
+              <button 
+                class="secondary service-action-btn" 
+                id="service-${serviceNameAttr}-restart"
+                data-service="${serviceNameAttr}"
+                data-action="restart"
+                onclick="ServicesController.action('${serviceNameJs}', 'restart', this)"
+                title="Restart usługi">
+                🔄 Restart
+              </button>
+            </td>
+          `;
+          tbody.appendChild(row);
+          this.services.set(service.name, service);
+        });
+      },
+      
+      attachServiceButtonListeners() {
+        // Sprawdź czy listener już został dodany
+        if (this._listenersAttached) {
+          return;
+        }
+        
+        const tbody = document.getElementById('servicesBody');
+        if (!tbody) {
+          console.warn('[ServicesController] servicesBody not found, cannot attach listeners');
+          return;
+        }
+        
+        // Użyj delegacji zdarzeń jako backup dla przeglądarek bez inline onclick
+        // (Inline onclick jest już dodany w renderSnapshot, więc to jest tylko fallback)
+        const clickHandler = (e) => {
+          // Sprawdź czy kliknięcie nastąpiło na przycisku lub jego dziecku
+          let btn = e.target;
+          
+          // Jeśli kliknięto na dziecko przycisku (np. emoji), znajdź rodzica
+          while (btn && btn !== tbody) {
+            if (btn.classList && btn.classList.contains('service-action-btn')) {
+              break;
+            }
+            btn = btn.parentElement;
+          }
+          
+          // Jeśli nie znaleziono przycisku, użyj closest() jako fallback
+          if (!btn || btn === tbody) {
+            if (typeof e.target.closest === 'function') {
+              btn = e.target.closest('.service-action-btn');
+            }
+          }
+          
+          if (!btn || btn.disabled) {
+            return;
+          }
+          
+          const serviceName = btn.getAttribute('data-service');
+          const action = btn.getAttribute('data-action');
+          
+          // Jeśli przycisk ma inline onclick, pozwól mu działać (nie zapobiegaj domyślnemu zachowaniu)
+          // Ten listener działa tylko jako backup
+          if (serviceName && action && btn.onclick) {
+            // Inline onclick już istnieje, nie rób nic
+            return;
+          }
+          
+          if (serviceName && action) {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log(`[ServicesController] Button click (delegation): service=${serviceName}, action=${action}`);
+            ServicesController.action(serviceName, action, btn);
+          }
+        };
+        
+        tbody.addEventListener('click', clickHandler, true); // Użyj capture phase dla lepszej kompatybilności
+        this._listenersAttached = true;
+        this._clickHandler = clickHandler; // Zapisz referencję na wypadek potrzeby usunięcia
+        console.log('[ServicesController] Event listeners attached to servicesBody (delegation as backup)');
+      },
+      
+      async load() {
+        const tbody = document.getElementById('servicesBody');
+        if (!tbody) return;
+        
+        try {
+          const data = await Utils.fetchJSON('/services/list');
+          
+          if (!data.success) {
+            const errorMsg = Utils.escapeHtml(data.error || 'brak szczegółów');
+            tbody.innerHTML = `<tr><td colspan="4">❌ Błąd: ${errorMsg}</td></tr>`;
+            return;
+          }
+          
+          const services = data.services || [];
+          if (services.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4">📭 Brak skonfigurowanych usług w config.yaml</td></tr>';
+            return;
+          }
+          this.renderSnapshot(services);
+        } catch (error) {
+          console.error('Services loading error:', error);
+          const errorMsg = Utils.escapeHtml(error.message || 'Błąd połączenia z serwerem');
+          tbody.innerHTML = `<tr><td colspan="4">❌ ${errorMsg}</td></tr>`;
+        }
+      },
+      
+      async action(serviceName, action, button) {
+        console.log(`[ServicesController.action] Called with: serviceName=${serviceName}, action=${action}, button=`, button);
+        
+        // Sprawdź czy przycisk jest wyłączony
+        if (button) {
+          const isDisabled = button.hasAttribute('disabled') || button.disabled;
+          if (isDisabled) {
+            console.debug(`Button is disabled, skipping action ${action} for ${serviceName}`);
+            Utils.showToast(`⚠️ Nie można wykonać akcji - przycisk wyłączony`);
+            return;
+          }
+        }
+        
+        if (!serviceName || !action) {
+          console.error('[ServicesController.action] Missing parameters:', { serviceName, action });
+          alert('Błąd: Brak parametrów akcji');
+          return;
+        }
+        
+        const row = button?.closest('tr');
+        const actionButtons = row?.querySelectorAll('button') || [];
+        
+        Utils.setElementsDisabled(actionButtons, true);
+        
+        // Pokaż loading na przycisku
+        const originalText = button ? button.textContent : '';
+        if (button) button.textContent = '⏳...';
+        
+        try {
+          console.log(`[ServicesController.action] Executing: ${action} on ${serviceName}`);
+          const url = `/services/${encodeURIComponent(serviceName)}/${action}`;
+          console.log(`[ServicesController.action] Request URL: ${url}`);
+          
+          const data = await Utils.fetchJSON(url, {
+            method: 'POST'
+          });
+          
+          console.log(`[ServicesController.action] Response:`, data);
+          
+          if (data?.success) {
+            const actionText = action === 'start' ? 'Uruchomiono' : 
+                              action === 'stop' ? 'Zatrzymano' : 
+                              action === 'restart' ? 'Zrestartowano' : action;
+            Utils.showToast(`✅ ${actionText} → ${serviceName}`);
+            // Odśwież listę po krótkiej chwili
+            setTimeout(() => this.load(), 1500);
+          } else {
+            throw new Error(data?.error || 'Nieznany błąd');
+          }
+        } catch (error) {
+          console.error('Service action error:', error);
+          // Oznacz błąd jako obsłużony
+          if (error) error._handled = true;
+          
+          let errorMsg = 'Nieznany błąd';
+          if (error.message) {
+            errorMsg = error.message;
+          } else if (typeof error === 'string') {
+            errorMsg = error;
+          } else if (error.toString) {
+            errorMsg = error.toString();
+          }
+          
+          // Szczegółowe logowanie
+          console.error('Full error details:', {
+            message: errorMsg,
+            name: error.name,
+            status: error.status,
+            stack: error.stack
+          });
+          
+          Utils.showToast(`❌ Błąd: ${errorMsg}`);
+          alert(`Błąd wykonania akcji ${action} na usłudze ${serviceName}:\n${errorMsg}`);
+        } finally {
+          Utils.setElementsDisabled(actionButtons, false);
+          button.textContent = originalText;
+        }
+      }
+    };
+
+    // ========== DOCKER CONTAINERS MANAGEMENT ==========
+    const DockerController = {
+      containers: new Map(),
+      
+      renderSnapshot(containers = []) {
+        const tbody = document.getElementById('dockerBody');
+        if (!tbody) return;
+        
+        if (!containers.length) {
+          tbody.innerHTML = '<tr><td colspan="5">📭 Brak kontenerów Docker</td></tr>';
+          return;
+        }
+        
+        tbody.innerHTML = '';
+        containers.forEach(container => {
+          const row = document.createElement('tr');
+          const state = container.state || 'stopped';
+          const statusClass = state === 'running' ? 'online' : 'offline';
+          const statusText = state === 'running' ? 'Uruchomiony' : 'Zatrzymany';
+          const containerId = container.id || '';
+          const containerName = Utils.escapeHtml(container.name || container.id || '');
+          const containerImage = Utils.escapeHtml(container.image || '');
+          const containerPorts = Utils.escapeHtml(container.ports || '—');
+          
+          row.innerHTML = `
+            <td data-label="Kontener"><strong>${containerName}</strong></td>
+            <td data-label="Obraz"><code>${containerImage}</code></td>
+            <td data-label="Status" class="status-cell">
+              <span class="status-indicator ${statusClass}"></span>
+              <span class="badge ${statusClass}">${statusText}</span>
+            </td>
+            <td data-label="Porty"><code style="font-size: 11px;">${containerPorts}</code></td>
+            <td data-label="Akcje">
+              ${state === 'running' ? `
+                <button onclick="DockerController.action(${JSON.stringify(containerId)}, 'stop', this)" class="secondary" title="Zatrzymaj kontener">
+                  ⏹️ Stop
+                </button>
+                <button onclick="DockerController.action(${JSON.stringify(containerId)}, 'restart', this)" class="secondary" title="Restart kontenera">
+                  🔄 Restart
+                </button>
+              ` : `
+                <button onclick="DockerController.action(${JSON.stringify(containerId)}, 'start', this)" title="Uruchom kontener">
+                  ▶️ Start
+                </button>
+              `}
+              <button onclick="DockerController.action(${JSON.stringify(containerId)}, 'remove', this)" class="secondary" title="Usuń kontener" style="color: var(--offline);">
+                🗑️ Usuń
+              </button>
+            </td>
+          `;
+          tbody.appendChild(row);
+          this.containers.set(container.id, container);
+        });
+      },
+      
+      async load() {
+        const tbody = document.getElementById('dockerBody');
+        if (!tbody) return;
+        
+        try {
+          const data = await Utils.fetchJSON('/docker/containers');
+          
+          if (!data.success) {
+            const errorMsg = Utils.escapeHtml(data.error || 'brak szczegółów');
+            tbody.innerHTML = `<tr><td colspan="5">❌ Błąd: ${errorMsg}</td></tr>`;
+            return;
+          }
+          
+          const containers = data.containers || [];
+          if (data.warning) {
+            // Pokaż ostrzeżenie jeśli Docker nie jest dostępny
+            tbody.innerHTML = `<tr><td colspan="5" style="color: var(--warning);">⚠️ ${Utils.escapeHtml(data.warning)}</td></tr>`;
+            return;
+          }
+          this.renderSnapshot(containers);
+        } catch (error) {
+          console.error('Docker containers loading error:', error);
+          const errorMsg = Utils.escapeHtml(error.message || 'Błąd połączenia z serwerem');
+          tbody.innerHTML = `<tr><td colspan="5">❌ ${errorMsg}</td></tr>`;
+        }
+      },
+      
+      async action(containerId, action, button) {
+        // Sprawdź czy przycisk jest wyłączony
+        if (button && button.disabled) {
+          console.debug(`Button is disabled, skipping action ${action} for container ${containerId}`);
+          return;
+        }
+        
+        if (action === 'remove' && !confirm(`❓ Czy na pewno usunąć kontener ${containerId.substring(0, 12)}?\n\nUWAGA: Ta operacja jest nieodwracalna!`)) {
+          return;
+        }
+        
+        const row = button?.closest('tr');
+        const actionButtons = row?.querySelectorAll('button') || [];
+        
+        Utils.setElementsDisabled(actionButtons, true);
+        
+        // Pokaż loading na przycisku
+        const originalText = button ? button.textContent : '';
+        if (button) button.textContent = '⏳...';
+        
+        try {
+          console.log(`Executing Docker action: ${action} on container ${containerId}`);
+          const url = `/docker/containers/${encodeURIComponent(containerId)}/${action}`;
+          console.log(`Request URL: ${url}`);
+          
+          const data = await Utils.fetchJSON(url, {
+            method: 'POST'
+          });
+          
+          if (data?.success) {
+            const actionText = action === 'start' ? 'Uruchomiono' : 
+                              action === 'stop' ? 'Zatrzymano' : 
+                              action === 'restart' ? 'Zrestartowano' : 
+                              action === 'remove' ? 'Usunięto' : action;
+            Utils.showToast(`✅ ${actionText} → kontener ${containerId.substring(0, 12)}`);
+            // Odśwież listę po krótkiej chwili
+            setTimeout(() => this.load(), 1500);
+          } else {
+            throw new Error(data?.error || 'Nieznany błąd');
+          }
+        } catch (error) {
+          console.error('Docker action error:', error);
+          // Oznacz błąd jako obsłużony
+          if (error) error._handled = true;
+          
+          let errorMsg = 'Nieznany błąd';
+          if (error.message) {
+            errorMsg = error.message;
+          } else if (typeof error === 'string') {
+            errorMsg = error;
+          } else if (error.toString) {
+            errorMsg = error.toString();
+          }
+          
+          // Szczegółowe logowanie
+          console.error('Full error details:', {
+            message: errorMsg,
+            name: error.name,
+            status: error.status,
+            stack: error.stack
+          });
+          
+          Utils.showToast(`❌ Błąd: ${errorMsg}`);
+          alert(`Błąd wykonania akcji ${action} na kontenerze:\n${errorMsg}`);
+        } finally {
+          Utils.setElementsDisabled(actionButtons, false);
+          button.textContent = originalText;
+        }
+      }
+    };
+
+    // ========== APPLICATION LOGS MANAGEMENT ==========
+    const LogsController = {
+      autoRefresh: false,
+      refreshInterval: null,
+      refreshIntervalMs: 5000, // 5 sekund
+      lines: 100,
+      level: '',
+      
+      init() {
+        this.log('System logów zainicjalizowany', 'info');
+        this.loadSettings();
+        this.refresh();
+      },
+      
+      loadSettings() {
+        try {
+          const savedLines = localStorage.getItem('logsLines');
+          const savedLevel = localStorage.getItem('logsLevel');
+          const savedAutoRefresh = localStorage.getItem('logsAutoRefresh');
+          
+          if (savedLines) {
+            this.lines = parseInt(savedLines, 10);
+            const select = document.getElementById('logsLinesSelect');
+            if (select) select.value = this.lines;
+          }
+          
+          if (savedLevel !== null) {
+            this.level = savedLevel;
+            const select = document.getElementById('logsLevelSelect');
+            if (select) select.value = this.level;
+          }
+          
+          if (savedAutoRefresh === 'true') {
+            this.autoRefresh = true;
+            this.startAutoRefresh();
+          }
+        } catch (e) {
+          console.debug('Failed to load logs settings:', e);
+        }
+      },
+      
+      saveSettings() {
+        try {
+          localStorage.setItem('logsLines', this.lines.toString());
+          localStorage.setItem('logsLevel', this.level);
+          localStorage.setItem('logsAutoRefresh', this.autoRefresh.toString());
+        } catch (e) {
+          console.debug('Failed to save logs settings:', e);
+        }
+      },
+      
+      updateSettings() {
+        const linesSelect = document.getElementById('logsLinesSelect');
+        const levelSelect = document.getElementById('logsLevelSelect');
+        
+        if (linesSelect) {
+          this.lines = parseInt(linesSelect.value, 10);
+        }
+        if (levelSelect) {
+          this.level = levelSelect.value || '';
+        }
+        
+        this.saveSettings();
+        this.refresh();
+      },
+      
+      async refresh() {
+        const logsDisplay = document.getElementById('logsDisplay');
+        const logsInfo = document.getElementById('logsInfo');
+        
+        if (!logsDisplay || !logsInfo) return;
+        
+        logsInfo.textContent = 'Ładowanie logów...';
+        logsDisplay.textContent = 'Ładowanie logów...';
+        
+        try {
+          const params = new URLSearchParams({
+            lines: this.lines.toString(),
+            ...(this.level ? { level: this.level } : {})
+          });
+          
+          const data = await Utils.fetchJSON(`/logs?${params.toString()}`);
+          
+          if (data?.success) {
+            // Formatuj logi z kolorowaniem poziomów
+            const logText = this.formatLogs(data.logs || '');
+            logsDisplay.innerHTML = logText;
+            
+            // Aktualizuj informacje
+            const infoParts = [];
+            infoParts.push(`Wyświetlono: ${data.displayed_lines || 0} linii`);
+            infoParts.push(`Wszystkich: ${data.total_lines || 0} linii`);
+            if (data.level_filter) {
+              infoParts.push(`Filtr: ${data.level_filter}`);
+            }
+            if (data.file_size) {
+              const sizeKB = (data.file_size / 1024).toFixed(1);
+              infoParts.push(`Rozmiar: ${sizeKB} KB`);
+            }
+            infoParts.push(`Ostatnia aktualizacja: ${new Date().toLocaleTimeString('pl-PL')}`);
+            
+            logsInfo.textContent = infoParts.join(' | ');
+            
+            // Przewiń do końca
+            logsDisplay.scrollTop = logsDisplay.scrollHeight;
+          } else {
+            throw new Error(data?.error || 'Nieznany błąd');
+          }
+        } catch (error) {
+          console.error('[Logs] Refresh error:', error);
+          logsDisplay.textContent = `❌ Błąd ładowania logów: ${error.message}`;
+          logsInfo.textContent = `Błąd: ${error.message}`;
+        }
+      },
+      
+      formatLogs(logText) {
+        if (!logText) return '';
+        
+        // Koloruj logi według poziomu
+        return logText
+          .replace(/ - DEBUG - /g, ' - <span style="color: var(--muted);">DEBUG</span> - ')
+          .replace(/ - INFO - /g, ' - <span style="color: var(--accent);">INFO</span> - ')
+          .replace(/ - WARNING - /g, ' - <span style="color: #ff9800;">WARNING</span> - ')
+          .replace(/ - ERROR - /g, ' - <span style="color: var(--offline);">ERROR</span> - ')
+          .replace(/ - CRITICAL - /g, ' - <span style="color: var(--error); font-weight: bold;">CRITICAL</span> - ');
+      },
+      
+      toggleAutoRefresh() {
+        this.autoRefresh = !this.autoRefresh;
+        
+        const btn = document.getElementById('logsAutoRefreshBtn');
+        if (btn) {
+          btn.textContent = this.autoRefresh 
+            ? '▶️ Auto-odświeżanie: ON' 
+            : '⏸️ Auto-odświeżanie: OFF';
+        }
+        
+        if (this.autoRefresh) {
+          this.startAutoRefresh();
+        } else {
+          this.stopAutoRefresh();
+        }
+        
+        this.saveSettings();
+      },
+      
+      startAutoRefresh() {
+        this.stopAutoRefresh();
+        this.refreshInterval = setInterval(() => {
+          this.refresh();
+        }, this.refreshIntervalMs);
+      },
+      
+      stopAutoRefresh() {
+        if (this.refreshInterval) {
+          clearInterval(this.refreshInterval);
+          this.refreshInterval = null;
+        }
+      },
+      
+      clearDisplay() {
+        const logsDisplay = document.getElementById('logsDisplay');
+        if (logsDisplay) {
+          logsDisplay.textContent = 'Logi wyczyszczone. Kliknij "Odśwież" aby załadować ponownie.';
+        }
+      },
+      
+      log(message, level = 'info') {
+        console.log(`[LogsController] ${message}`);
+      }
+    };
+
     // ========== GLOBAL FUNCTIONS (for inline onclick handlers) ==========
     window.controlRelay = RelayController.control.bind(RelayController);
     window.controlAllRelays = RelayController.controlAll.bind(RelayController);
     window.toggleNotify = NotificationController.toggle.bind(NotificationController);
     window.vmAction = VMController.performAction.bind(VMController);
+    window.quickStartVM = quickStartVM;
+    window.quickShutdownVM = quickShutdownVM;
 
-    // Make HostController available globally for onclick handlers
+    // Make controllers available globally for onclick handlers
     window.HostController = HostController;
+    window.ServicesController = ServicesController;
+    window.DockerController = DockerController;
+    window.LogsController = LogsController;
 
     // ========== APPLICATION INITIALIZATION ==========
     document.addEventListener('DOMContentLoaded', () => {
@@ -1539,12 +2802,50 @@ Przekaźnik 8 - SW03(Prox02)</textarea>
       
       // Initialize tab visibility detection FIRST
       VisibilityManager.init();
+      SSEController.init();
       
       // Start initial loads
       setTimeout(RelayController.pollStatus, 300);
       setTimeout(NotificationController.fetchStates, 500);
       setTimeout(HostController.load.bind(HostController), 700);
-      setTimeout(VMController.load.bind(VMController), 900);
+      
+      // VM: pierwsze załadowanie, potem adaptacyjne odświeżanie
+      setTimeout(() => {
+        VMController.load().then(() => {
+          // Po pierwszym załadowaniu, uruchom adaptacyjne odświeżanie
+          if (VisibilityManager.isVisible && !SSEController.connected) {
+            VMController.startAdaptiveRefresh();
+          }
+        });
+      }, 900);
+      
+      // Initialize Services and Docker controllers
+      // Najpierw załącz event listenery, potem załaduj dane
+      ServicesController.attachServiceButtonListeners();
+      setTimeout(() => {
+        ServicesController.load();
+      }, 1000);
+      setTimeout(() => {
+        DockerController.load();
+      }, 1100);
+      
+      // Initialize Logs controller
+      setTimeout(() => {
+        LogsController.init();
+      }, 1200);
+      
+      // Przywróć ostatnie wybory VM dla szybkiego startu (współdzielone między urządzeniami)
+      setTimeout(async () => {
+        await QuickStartVM.restoreAllChoices();
+      }, 1300);
+      
+      // Set up auto-refresh for services and docker
+      setInterval(() => {
+        if (VisibilityManager.isVisible) {
+          ServicesController.load();
+          DockerController.load();
+        }
+      }, 30000); // Co 30 sekund
       
       // Set up intervals ONLY if tab is visible
       if (VisibilityManager.isVisible) {
@@ -1557,15 +2858,72 @@ Przekaźnik 8 - SW03(Prox02)</textarea>
     });
 
     // ========== ERROR HANDLING ==========
-    window.addEventListener('error', (event) => {
-      console.error('Global error:', event.error);
-      Utils.showToast('❌ Wystąpił błąd aplikacji');
-    });
+    (function() {
+      const handledErrors = new Set();
+      const MAX_ERROR_REPORTS = 1; // Tylko pierwsze wystąpienie każdego typu błędu
+      
+      window.addEventListener('error', (event) => {
+        try {
+          // Ignoruj błędy składniowe z linii 2 - często powodowane przez proxy/modifier
+          if (event.lineno === 2 && event.colno === 1 && event.message && event.message.includes("expected expression")) {
+            const errorKey = `proxy-syntax:${event.lineno}:${event.colno}`;
+            handledErrors.add(errorKey);
+            // Całkowicie wycisz błędy proxy - nie loguj nic
+            event.preventDefault();
+            event.stopPropagation();
+            return false;
+          }
+          
+          // Ignoruj błędy parsowania HTML jako JavaScript (często spowodowane przez proxy)
+          if (event.message && event.message.includes("expected expression") && event.lineno <= 10) {
+            const errorKey = `proxy-parse:${event.lineno}:${event.message}`;
+            handledErrors.add(errorKey);
+            // Całkowicie wycisz błędy proxy - nie loguj nic
+            event.preventDefault();
+            event.stopPropagation();
+            return false;
+          }
+          
+          // Ignoruj błędy z zewnętrznych skryptów jeśli nie są krytyczne
+          if (event.filename && !event.filename.includes(window.location.hostname) && !event.filename.includes(location.hostname)) {
+            console.debug('External script error:', event.error);
+            return;
+          }
+          
+          // Limit raportowania błędów - tylko pierwsze N wystąpień każdego typu
+          const errorKey = `error:${event.message}:${event.filename}:${event.lineno}`;
+          if (handledErrors.has(errorKey)) {
+            return; // Już obsłużony, ignoruj
+          }
+          handledErrors.add(errorKey);
+          
+          console.error('Global error:', event.error, event.message, event.filename, event.lineno);
+          // Nie pokazuj toast dla błędów, które mogą być już obsłużone
+          if (!event.error || !event.error._handled) {
+            if (typeof Utils !== 'undefined' && Utils.showToast) {
+              Utils.showToast('❌ Wystąpił błąd aplikacji');
+            }
+          }
+        } catch (e) {
+          // Silent fail - error handler shouldn't throw
+          console.debug('Error in error handler:', e);
+        }
+      }, true); // Użyj capture phase aby przechwycić błąd wcześnie
+    })();
 
     window.addEventListener('unhandledrejection', (event) => {
+      // Ignoruj odrzucone promisy, które mogą być już obsłużone w catch
+      if (event.reason && event.reason._handled) {
+        return;
+      }
       console.error('Unhandled promise rejection:', event.reason);
-      Utils.showToast('❌ Błąd komunikacji');
-      event.preventDefault();
+      // Tylko pokazuj toast jeśli błąd nie jest już obsłużony
+      if (!event.reason || !event.reason._handled) {
+        console.error('Full rejection details:', event.reason, event.promise);
+        Utils.showToast('❌ Błąd komunikacji');
+      }
+      // Nie blokuj domyślnego zachowania dla niektórych błędów
+      // event.preventDefault();
     });
   </script>
 </body>

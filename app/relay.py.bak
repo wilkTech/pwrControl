@@ -21,7 +21,7 @@ IMPORTANT:
 from typing import List, Optional, Dict, Any
 import time
 from threading import Timer, Lock, Thread, Event
-from queue import Queue, Empty
+from queue import Queue
 import json
 import os
 import logging
@@ -67,11 +67,10 @@ class RelayController:
         # Threading
         self.state_lock = Lock()
         self.stop_event = Event()
-        self._control_relay_19_in_progress = False  # Flag to prevent recursion
         
         # Notification settings
         self.notification_file = getattr(cfg, 'relay_notification_file', 'relay_notifications.json')
-        self.notify_threshold_s = float(getattr(cfg, 'relay_notify_threshold_s', 4*3600))  # 4 hours
+        self.notify_threshold_s = float(getattr(cfg, 'relay_notify_threshold_s', 5*3600))  # 5 hours
         
         # Event batching for ON/OFF emails
         self.event_queue = Queue()
@@ -112,8 +111,7 @@ class RelayController:
         return {
             "enabled": True,    # Notifications enabled by default
             "last_on": None,    # When relay was turned on (None = not currently on)
-            "notified": False,   # Whether long-running notification was sent
-            "last_notification": None
+            "notified": False   # Whether long-running notification was sent
         }
 
     def sync_states_on_startup(self):
@@ -190,8 +188,8 @@ class RelayController:
                     
                 self.notification_states[relay_id] = st
             
-            # Save cleaned states (already have lock, so pass already_locked=True)
-            self.save_notification_states(already_locked=True)
+            # Save cleaned states
+            self.save_notification_states()
             
         # Store power loss data for monitor correlation (only real power loss events)
         real_power_loss_data = [item for item in potentially_lost_data if item.get('reason') == 'power_loss']
@@ -261,24 +259,12 @@ class RelayController:
         self.save_notification_states()
         self.logger.info("Notification snapshot migrated from legacy format")
 
-    def save_notification_states(self, already_locked: bool = False):
-        """Atomically save notification states to file.
-        
-        Args:
-            already_locked: If True, assumes state_lock is already acquired
-        """
+    def save_notification_states(self):
+        """Atomically save notification states to file."""
         try:
-            # FIXED: Use lock to prevent race conditions when reading notification_states
-            # But allow calling with already acquired lock to prevent deadlock
-            if already_locked:
-                states_to_save = dict(self.notification_states)  # Create a copy
-            else:
-                with self.state_lock:
-                    states_to_save = dict(self.notification_states)  # Create a copy
-            
             temp_file = self.notification_file + '.tmp'
             with open(temp_file, 'w') as f:
-                json.dump(states_to_save, f, indent=2)
+                json.dump(self.notification_states, f, indent=2)
             os.replace(temp_file, self.notification_file)
             
         except Exception as e:
@@ -331,48 +317,41 @@ class RelayController:
                     
         return details
 
-    def _turn_on_internal(self, idx: int, skip_event: bool = False):
-        """Internal method to turn on relay without triggering events."""
+    def turn_on(self, idx: int):
+        """Turn on relay and update notification state."""
         if 0 <= idx < len(self.Relays):
             self.Relays[idx].on()
             
+            # FIXED: Don't reset enabled to False, preserve user setting
             relay_id = str(idx + 1)
             with self.state_lock:
                 st = self.notification_states.get(relay_id, self._default_state())
                 st["last_on"] = int(time.time())
-                st["notified"] = False
-                st["last_notification"] = None
+                st["notified"] = False  # Reset notification flag for new session
+                # enabled stays as user configured it
                 self.notification_states[relay_id] = st
                 
             self.save_notification_states()
-            if not skip_event:
-                self.add_relay_event(idx + 1, True)
+            self.add_relay_event(idx + 1, True)
             self.logger.debug("Relay %d turned ON, notification tracking updated", idx + 1)
-
-    def turn_on(self, idx: int):
-        """Turn on relay and update notification state."""
-        self._turn_on_internal(idx, skip_event=False)
-
-    def _turn_off_internal(self, idx: int, skip_event: bool = False):
-        """Internal method to turn off relay without triggering events."""
-        if 0 <= idx < len(self.Relays):
-            self.Relays[idx].off()
-            
-            relay_id = str(idx + 1)
-            with self.state_lock:
-                st = self.notification_states.get(relay_id, self._default_state())
-                st["last_on"] = None
-                st["notified"] = False
-                self.notification_states[relay_id] = st
-                
-            self.save_notification_states()
-            if not skip_event:
-                self.add_relay_event(idx + 1, False)
-            self.logger.debug("Relay %d turned OFF, notification tracking updated", idx + 1)
 
     def turn_off(self, idx: int):
         """Turn off relay and update notification state."""  
-        self._turn_off_internal(idx, skip_event=False)
+        if 0 <= idx < len(self.Relays):
+            self.Relays[idx].off()
+            
+            # FIXED: Don't reset enabled to False, preserve user setting  
+            relay_id = str(idx + 1)
+            with self.state_lock:
+                st = self.notification_states.get(relay_id, self._default_state())
+                st["last_on"] = None  # Relay is now OFF
+                st["notified"] = False  # Reset notification flag
+                # enabled stays as user configured it
+                self.notification_states[relay_id] = st
+                
+            self.save_notification_states() 
+            self.add_relay_event(idx + 1, False)
+            self.logger.debug("Relay %d turned OFF, notification tracking updated", idx + 1)
 
     def control_relay_19(self, force_on: bool = False):
         """
@@ -386,23 +365,10 @@ class RelayController:
         - Relay 8 (pin 26)
         
         And turn OFF when all dependent relays are OFF.
-        
-        FIXED: Prevents recursion by using internal methods and flag.
         """
-        # FIXED: Prevent recursion
-        if self._control_relay_19_in_progress:
-            self.logger.debug("control_relay_19: Already in progress, skipping recursive call")
-            return
-        
-        self._control_relay_19_in_progress = True
         try:
             # Dependent pins that should trigger Relay 5 (pin 19)
             dependent_pins = [5, 6, 16, 20, 26]
-            
-            # Validate: pin 19 cannot be in dependent_pins
-            if 19 in dependent_pins:
-                self.logger.error("control_relay_19: Pin 19 cannot be in dependent_pins!")
-                return
             
             # Find indices of dependent relays
             dependent_indices = []
@@ -411,6 +377,7 @@ class RelayController:
                     idx = self.relay_pins.index(pin)
                     dependent_indices.append(idx)
                 except ValueError:
+                    # Pin not in relay_pins - skip it
                     continue
             
             # Find Relay 5 (pin 19) index
@@ -418,41 +385,34 @@ class RelayController:
                 relay5_pin = 19
                 relay5_index = self.relay_pins.index(relay5_pin)
             except ValueError:
+                # Pin 19 not in relay_pins - can't control it
                 self.logger.debug("control_relay_19: Pin 19 not found in relay_pins")
                 return
             
-            # Validate: relay5_index should not be in dependent_indices
-            if relay5_index in dependent_indices:
-                self.logger.error("control_relay_19: Relay 5 index found in dependent_indices!")
-                return
+            # Check if any dependent relay is ON
+            any_dependent_on = any(
+                getattr(self.Relays[idx], 'is_lit', False) 
+                for idx in dependent_indices
+            )
             
-            if not dependent_indices:
-                self.logger.warning("control_relay_19: No dependent relays found")
-                return
+            # Get current state of Relay 5 (pin 19)
+            relay5_current_state = getattr(self.Relays[relay5_index], 'is_lit', False)
             
-            # FIXED: Use lock to prevent race conditions
-            with self.state_lock:
-                # Check if any dependent relay is ON
-                any_dependent_on = any(
-                    getattr(self.Relays[idx], 'is_lit', False) 
-                    for idx in dependent_indices
-                )
-                
-                # Get current state of Relay 5 (pin 19)
-                relay5_current_state = getattr(self.Relays[relay5_index], 'is_lit', False)
-            
-            # Apply logic using internal methods to prevent recursion
+            # Apply logic
             if force_on:
+                # Force Relay 5 ON regardless of dependencies
                 if not relay5_current_state:
-                    self._turn_on_internal(relay5_index, skip_event=True)
+                    self.turn_on(relay5_index)
                     self.logger.info("control_relay_19: Forced Relay 5 ON")
                     
             elif any_dependent_on and not relay5_current_state:
-                self._turn_on_internal(relay5_index, skip_event=True)
+                # Turn Relay 5 ON because dependents are active
+                self.turn_on(relay5_index)
                 self.logger.info("control_relay_19: Relay 5 auto-turned ON (dependents active)")
                 
             elif not any_dependent_on and relay5_current_state:
-                self._turn_off_internal(relay5_index, skip_event=True)
+                # Turn Relay 5 OFF because no dependents are active
+                self.turn_off(relay5_index)
                 self.logger.info("control_relay_19: Relay 5 auto-turned OFF (no dependents active)")
             
             # Log current state for debugging
@@ -461,8 +421,6 @@ class RelayController:
                 
         except Exception as e:
             self.logger.exception("control_relay_19 failed: %s", e)
-        finally:
-            self._control_relay_19_in_progress = False
 
     def cleanup_for_graceful_shutdown(self):
         """
@@ -479,7 +437,7 @@ class RelayController:
                         cleaned_count += 1
                         
                 if cleaned_count > 0:
-                    self.save_notification_states(already_locked=True)
+                    self.save_notification_states()
                     self.logger.info("Cleaned up %d relay notification timestamps for graceful shutdown", cleaned_count)
                     
         except Exception as e:
@@ -517,7 +475,7 @@ class RelayController:
         with self.state_lock:
             if relay_key in self.notification_states:
                 self.notification_states[relay_key]["enabled"] = enabled
-                self.save_notification_states(already_locked=True)
+                self.save_notification_states()
                 self.logger.info("Relay %d notifications %s", relay_id, 
                                "enabled" if enabled else "disabled")
                 return True
@@ -553,31 +511,16 @@ class RelayController:
     def _send_batched_events(self):
         """Send batched relay events email (checks config setting)."""
         
-        # FIXED: Cancel timer first to prevent race condition
-        timer_to_cancel = None
-        with self.batch_lock:
-            if self.batch_timer is not None:
-                timer_to_cancel = self.batch_timer
-                self.batch_timer = None
-        
-        # Cancel timer if still active
-        if timer_to_cancel:
-            try:
-                if hasattr(timer_to_cancel, 'is_alive') and timer_to_cancel.is_alive():
-                    timer_to_cancel.cancel()
-            except Exception:
-                pass  # Timer already finished
-        
         # Check if relay event emails are enabled
         try:
             if self.cfg and not getattr(self.cfg, 'enable_relay_event_emails', True):
-                # FIXED: Use get_nowait() instead of empty() (thread-safe)
+                # Drain the queue without sending emails
                 drained_count = 0
-                while True:
+                while not self.event_queue.empty():
                     try:
                         self.event_queue.get_nowait()
                         drained_count += 1
-                    except Empty:
+                    except:
                         break
                         
                 if drained_count > 0:
@@ -587,26 +530,28 @@ class RelayController:
             self.logger.debug("Error checking enable_relay_event_emails config: %s", e)
         
         if not self.emailer:
-            # FIXED: Use get_nowait() instead of empty() (thread-safe)
+            # Drain queue if no emailer available
             drained_count = 0
-            while True:
+            while not self.event_queue.empty():
                 try:
                     self.event_queue.get_nowait()
                     drained_count += 1
-                except Empty:
+                except:
                     break
             
             if drained_count > 0:
                 self.logger.debug("No emailer available - dropped %d queued events", drained_count)
             return
             
-        # FIXED: Use get_nowait() instead of empty() (thread-safe)
         events = []
-        while True:
-            try:
+        try:
+            while not self.event_queue.empty():
                 events.append(self.event_queue.get_nowait())
-            except Empty:
-                break
+        except:
+            pass
+            
+        with self.batch_lock:
+            self.batch_timer = None
             
         if not events:
             return
@@ -647,24 +592,17 @@ class RelayController:
                         if not last_on:
                             continue
                             
-                        running_time = current_time - last_on
-                        threshold = self.notify_threshold_s  # teraz 4h jeśli zmienisz w configu
-
-                        # Pierwsze powiadomienie
-                        if st["last_notification"] is None:
-                            if running_time >= threshold:
-                                self._send_long_running_notification(relay_id, running_time)
-                                st["last_notification"] = current_time
-                            continue
-
-                        # Kolejne powiadomienia co threshold (4h)
-                        time_since_last = current_time - st["last_notification"]
-                        if time_since_last >= threshold:
-                            self._send_long_running_notification(relay_id, running_time)
-                            st["last_notification"] = current_time
+                        if st.get("notified", False):
+                            continue  # Already notified
                             
-                    # Save updated notification flags (already have lock)
-                    self.save_notification_states(already_locked=True)
+                        # Check if running too long
+                        running_time = current_time - last_on
+                        if running_time >= self.notify_threshold_s:
+                            self._send_long_running_notification(relay_id, running_time)
+                            st["notified"] = True
+                            
+                    # Save updated notification flags
+                    self.save_notification_states()
                     
             except Exception as e:
                 self.logger.error("Error in notification worker: %s", e)
@@ -701,110 +639,30 @@ Current status: ON ⚡"""
             self.logger.error("Failed to send long-running notification: %s", e)
 
     def setup_switches(self):
-        """Setup physical switch callbacks.
-        
-        Special handling:
-        - Switch 4 (button 5, index 4) is NOT assigned to Relay 5
-        - Switch 4 should turn OFF all relays when pressed
-        - All other switches toggle their corresponding relay
-        - After each switch action (except switch 4), control_relay_19() is called
-        """
-        try:
-            # Find Relay 5 index (pin 19)
-            try:
-                relay5_index = self.relay_pins.index(19)
-            except ValueError:
-                relay5_index = None
-                self.logger.warning("Pin 19 not found in relay_pins - switch 5 will not have special handling")
-            
-            def make_toggle_handler(switch_idx):
-                """Create a toggle handler for a specific switch index."""
-                return lambda: self.toggle_relay(switch_idx)
-            
-            for idx, switch in enumerate(self.Switches):
-                try:
-                    if hasattr(switch, 'when_pressed'):
-                        # Special handling for switch 4 (button 5) - turn off all relays
-                        if idx == relay5_index and relay5_index is not None:
-                            switch.when_pressed = lambda: self.handle_switch_5()
-                            self.logger.info("Switch %d (button 5) configured to turn OFF all relays", idx)
-                        else:
-                            # Regular switch - toggle corresponding relay
-                            # FIXED: Use helper function to avoid closure issue in lambda
-                            switch.when_pressed = make_toggle_handler(idx)
-                except Exception as e:
-                    self.logger.error("Failed to configure switch %d: %s", idx, e)
-                    
-            self.logger.debug("Physical switches configured (switch 5 has special handling)")
-        except Exception as e:
-            self.logger.exception("Failed to setup switches: %s", e)
-            # Nie przerywaj inicjalizacji - aplikacja może działać bez przycisków
+        """Setup physical switch callbacks."""
+        for idx, switch in enumerate(self.Switches):
+            if hasattr(switch, 'when_pressed'):
+                switch.when_pressed = lambda idx=idx: self.toggle_relay(idx)
+                
+        self.logger.debug("Physical switches configured")
 
-    def handle_switch_5(self):
-        """Handle physical switch 5 press - turn OFF all relays."""
-        self.logger.info("Physical switch 5 pressed - turning OFF all relays")
-        self.turn_off_all()
-        # Note: control_relay_19() is called by turn_off_all() if needed
-    
     def toggle_relay(self, idx: int):
-        """Toggle relay state (for physical switches).
-        
-        After toggling, control_relay_19() is called to maintain Relay 5 dependency logic,
-        similar to web interface behavior.
-        """
+        """Toggle relay state (for physical switches)."""
         if 0 <= idx < len(self.Relays):
-            # Find Relay 5 index to avoid calling control_relay_19 for Relay 5 itself
-            try:
-                relay5_index = self.relay_pins.index(19)
-                # FIXED: Prevent direct toggle of Relay 5
-                if idx == relay5_index:
-                    self.logger.warning("toggle_relay() called for Relay 5 - this should not happen (use handle_switch_5() instead)")
-                    return
-            except ValueError:
-                relay5_index = None
-            
-            # Toggle relay
             if getattr(self.Relays[idx], 'is_lit', False):
                 self.turn_off(idx)
             else:
                 self.turn_on(idx)
-            
-            # Call control_relay_19() after toggle (except for Relay 5 itself)
-            # This maintains the same logic as web interface
-            if idx != relay5_index and hasattr(self, 'control_relay_19'):
-                try:
-                    self.control_relay_19()
-                    self.logger.debug("control_relay_19() called after physical switch %d toggle", idx + 1)
-                except Exception as e:
-                    self.logger.debug("control_relay_19() failed after physical switch %d toggle: %s", idx + 1, e)
 
     def turn_on_all(self):
         """Turn on all relays."""
         for idx in range(len(self.Relays)):
             self.turn_on(idx)
-        
-        # Call control_relay_19() after turning on all relays
-        # This ensures Relay 5 dependency logic is maintained
-        if hasattr(self, 'control_relay_19'):
-            try:
-                self.control_relay_19()
-                self.logger.debug("control_relay_19() called after turn_on_all()")
-            except Exception as e:
-                self.logger.debug("control_relay_19() failed after turn_on_all(): %s", e)
 
     def turn_off_all(self):
         """Turn off all relays."""
         for idx in range(len(self.Relays)):
             self.turn_off(idx)
-        
-        # Call control_relay_19() after turning off all relays
-        # This ensures Relay 5 is also turned off (since all dependents are off)
-        if hasattr(self, 'control_relay_19'):
-            try:
-                self.control_relay_19()
-                self.logger.debug("control_relay_19() called after turn_off_all()")
-            except Exception as e:
-                self.logger.debug("control_relay_19() failed after turn_off_all(): %s", e)
 
     def stop(self):
         """Stop notification worker and cleanup."""
@@ -818,11 +676,7 @@ Current status: ON ⚡"""
             
         with self.batch_lock:
             if self.batch_timer:
-                try:
-                    if hasattr(self.batch_timer, 'is_alive') and self.batch_timer.is_alive():
-                        self.batch_timer.cancel()
-                except Exception:
-                    pass  # Timer already finished
+                self.batch_timer.cancel()
                 self.batch_timer = None
                 
         # Send any remaining batched events

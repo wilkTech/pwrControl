@@ -1,6 +1,20 @@
-flask
-pyyaml
-proxmoxer
-paramiko
-wakeonlan
-gpiozero
+# PowerControl Dependencies
+# Core dependencies
+flask>=3.0.0
+pyyaml>=6.0
+
+# GPIO control (required for Raspberry Pi hardware)
+gpiozero>=1.6.0
+
+# Proxmox integration (optional)
+proxmoxer>=2.0.0
+
+# Wake-on-LAN support (optional)
+wakeonlan>=3.0.0
+
+# SSH client for remote commands (optional)
+paramiko>=3.0.0
+
+# HTTP library (required by proxmoxer)
+requests>=2.31.0
+

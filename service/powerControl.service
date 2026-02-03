@@ -1,0 +1,32 @@
+[Unit]
+Description=PowerControl - Power Management System
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/powerControl
+
+ExecStart=/usr/bin/python3 /opt/powerControl/main.py
+
+Restart=on-failure
+RestartSec=10
+
+Environment="PYTHONUNBUFFERED=1"
+
+KillMode=mixed
+KillSignal=SIGINT
+TimeoutStopSec=30
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=powercontrol
+
+[Install]
+WantedBy=multi-user.target
+
+
+
+

@@ -1,128 +1,90 @@
-# PowerControl Project Configuration Example
+# PowerControl - przykładowa konfiguracja
+# Skopiuj jako config.yaml i uzupełnij własnymi danymi.
+# NIE commituj config.yaml (zawiera hasła i dane wrażliwe).
 
-# ====================================
-# SEKCJA WEB - Ustawienia serwera Flask
-# ====================================
-web:
-  host: "0.0.0.0"                    # IP do nasłuchiwania
-  port: 5000                         # Port aplikacji
-  debug: false                        # Wyłącz debug w produkcji!
-  secret_key: "change-me-to-random-string-at-least-32-chars"
-  workers: 4                         # Ilość workerów Gunicorn
+log_path: logs/power_control.log
+silence_logs: false
+log_level: INFO
+host: 0.0.0.0
+port: 5000
+heartbeat_interval_s: 60
+heartbeat_file: logs/last_heartbeat.json
+enable_relay_event_emails: false
+enable_startup_notifications: true
+enable_shutdown_notifications: true
 
-# ====================================
-# SEKCJA EMAIL - Powiadomienia
-# ====================================
+proxmox:
+  nodes:
+    prox01: 192.168.1.20
+    prox02: 192.168.1.21
+  nodes_mac:
+    prox01: "XX-XX-XX-XX-XX-XX"
+    prox02: "XX-XX-XX-XX-XX-XX"
+  node_credentials:
+    default:
+      user: root
+      password: ""  # lub użyj POWERCONTROL__PROXMOX__NODE_CREDENTIALS__DEFAULT__PASSWORD
+      port: 22
+  nodes_relay:
+    prox01: 2
+    prox02: 8
+  vm_fetch_relays: [2, 8]
+  quick_start_vms:
+    relay_2:
+      103: "VM_103 - opis"
+      105: "VM_105 - opis"
+    relay_8:
+      230: "VM_230 - opis"
+  user: apiuser@pve
+  token_name: ""
+  token_value: ""  # lub zmienna środowiskowa
+  password: ""
+  verify_ssl: false
+  log_reachability: false
+  timeout: 5
+  cooldown_seconds: 30
+
 email:
   enabled: true
-  server: "smtp.gmail.com"
+  address: twoj-email@example.com
+  password: ""  # zalecane: POWERCONTROL__EMAIL__PASSWORD
+  server: smtp.gmail.com
   port: 465
-  use_tls: true
-  from_addr: "your-email@gmail.com"
-  password: "your-app-password"      # Dla Gmaila użyj hasła aplikacji!
-  to_addrs:
-    - "admin@example.com"
-    - "user2@example.com"
-  sender_name: "PowerControl"
-  timeout: 10
+  recipient: odbiorca@example.com
+  exclude_sender_from_recipients: false
+  use_ssl: true
+  starttls: false
+  timeout: 15
+  max_retries: 3
+  retry_backoff_base: 2.0
+  max_per_minute: 10
+  debug: false
+  subject_prefix: "[PowerControl] "
+  from_name: "PowerControl"
 
-# ====================================
-# SEKCJA PRZEKAŹNIKÓW - GPIO
-# ====================================
-relay_pins:                          # Numery GPIO dla przekaźników
-  - 17
-  - 27
-  - 22
-  - 23
+enable_email_notifications: true
 
-switch_pins: []                      # Piny dla przycisków (opcjonalnie)
+computers:
+  pc-1:
+    relay: 4
+    MAC: "XX-XX-XX-XX-XX-XX"
+    IP: "192.168.1.100"
+    OS: "windows"
+    Username: "admin"
+    Password: ""
 
-# ====================================
-# SEKCJA PROXMOX - Integracja VM
-# ====================================
-proxmox:
-  enabled: true
-  host: "192.168.1.10"              # IP serwera Proxmox
-  port: 8006
-  user: "root@pam"
-  password: "your-proxmox-password"
-  verify_ssl: false                  # false dla self-signed certs
-  timeout: 10
+  pc-2:
+    relay: 7
+    MAC: "XX-XX-XX-XX-XX-XX"
+    IP: "192.168.1.101"
+    OS: "windows"
+    Username: "admin"
+    Password: ""
 
-# ====================================
-# SEKCJA MONITORING - Heartbeat
-# ====================================
-monitor:
-  enabled: true
-  heartbeat_interval: 30              # Sekundy między heartbeatami
-  heartbeat_file: "/tmp/powercontrol_heartbeat.json"
-  max_hosts_per_request: 10          # Hosty do jednoczesnego monitorowania
-  thread_pool_size: 5                # Wątki dla networking
-  network_timeout: 5                 # Timeout dla pingów
+relay_pins: [5, 6, 13, 16, 19, 20, 21, 26]
+switch_pins: [24, 8, 10, 7, 22, 12, 9, 25]
 
-# ====================================
-# SEKCJA LOGOWANIA
-# ====================================
-logging:
-  level: "INFO"                       # DEBUG, INFO, WARNING, ERROR, CRITICAL
-  file: "logs/powercontrol.log"
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-  max_size_mb: 50                    # Rozmiar przed rotacją
-  backup_count: 10                   # Ilość archiwalnych logów
-
-# ====================================
-# SEKCJA HOSTÓW DO MONITOROWANIA
-# ====================================
-hosts:
-  - name: "Server1"
-    ip: "192.168.1.50"
-    mac: "00:11:22:33:44:55"
-    enabled: true
-
-  - name: "Server2"
-    ip: "192.168.1.51"
-    mac: "00:11:22:33:44:66"
-    enabled: true
-
-  - name: "Laptop"
-    ip: "192.168.1.100"
-    mac: "aa:bb:cc:dd:ee:ff"
-    enabled: false
-
-# ====================================
-# OPCJE DODATKOWE
-# ====================================
-app:
-  name: "PowerControl"
-  version: "1.0.0"
-  description: "Infrastructure Management System"
-  
-database:
-  enabled: false                      # Jeśli używasz bazy danych
-  type: "sqlite"                      # sqlite, postgresql, mysql
-  # path: "powercontrol.db"           # Dla SQLite
-  # connection_string: "postgresql://user:pass@localhost/db"  # Dla PostgreSQL
-
-security:
-  enable_auth: false                  # Włącz autentykację
-  enable_cors: false                  # Włącz CORS jeśli potrzebny
-  allowed_origins:
-    - "http://localhost:3000"
-    - "http://localhost:5000"
-
-# ====================================
-# UWAGI WAŻNE
-# ====================================
-# 1. HASŁA: W produkcji ustaw hasła w zmiennych środowiskowych!
-#    export POWERCONTROL_EMAIL_PASSWORD="password"
-#    export POWERCONTROL_PROXMOX_PASSWORD="password"
-#
-# 2. CERTYFIKATY: Dla Proxmox self-signed, ustaw verify_ssl: false
-#
-# 3. LOGI: Upewnij się że katalog logs/ istnieje
-#    mkdir -p logs/
-#
-# 4. BACKUP: Regularnie backupuj config.yaml (bez haseł!)
-#
-# 5. UPRAWNIENIA: Dla GPIO potrzebujesz root lub członkostwa w grupie gpio
-#    sudo usermod -a -G gpio $USER
+services:
+  powerControl:
+    service: powerControl.service
+    description: "Usługa PowerControl"

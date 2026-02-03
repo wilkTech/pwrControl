@@ -2,41 +2,55 @@
   "1": {
     "enabled": false,
     "last_on": null,
-    "notified": false
+    "notified": false,
+    "notification_cycle": 0,
+    "last_notification": null
   },
   "2": {
     "enabled": true,
-    "last_on": null,
-    "notified": false
+    "last_on": 1770077127,
+    "notified": false,
+    "notification_cycle": 0,
+    "last_notification": null
   },
   "3": {
     "enabled": false,
     "last_on": null,
-    "notified": false
+    "notified": false,
+    "notification_cycle": 0
   },
   "4": {
     "enabled": false,
     "last_on": null,
-    "notified": false
+    "notified": false,
+    "notification_cycle": 0,
+    "last_notification": null
   },
   "5": {
     "enabled": false,
     "last_on": null,
-    "notified": false
+    "notified": false,
+    "notification_cycle": 0,
+    "last_notification": null
   },
   "6": {
     "enabled": true,
     "last_on": null,
-    "notified": false
+    "notified": false,
+    "notification_cycle": 0,
+    "last_notification": null
   },
   "7": {
     "enabled": false,
     "last_on": null,
-    "notified": false
+    "notified": false,
+    "notification_cycle": 0
   },
   "8": {
     "enabled": true,
     "last_on": null,
-    "notified": false
+    "notified": false,
+    "notification_cycle": 0,
+    "last_notification": null
   }
 }

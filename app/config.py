@@ -22,6 +22,7 @@ class AppConfig:
     proxmox: Dict[str, Any] = field(default_factory=lambda: {})
     email: Dict[str, Any] = field(default_factory=lambda: {})
     computers: Dict[str, Dict[str, str]] = field(default_factory=lambda: {})
+    services: Dict[str, Dict[str, str]] = field(default_factory=lambda: {})
     relay_pins: list = field(default_factory=lambda: [5, 6, 13, 16, 19, 20, 21, 26])
     switch_pins: list = field(default_factory=lambda: [24, 8, 10, 7, 22, 12, 9, 25])
     enable_email_notifications: bool = True
@@ -52,10 +53,13 @@ def load_config(path: str = 'config.yaml') -> AppConfig:
                         else:
                             if k == 'proxmox' and isinstance(v, dict):
                                 cfg.proxmox.update(v)
-                            if k == 'email' and isinstance(v, dict):
+                            elif k == 'email' and isinstance(v, dict):
                                 cfg.email.update(v)
-                            if k == 'computers' and isinstance(v, dict):
+                            elif k == 'computers' and isinstance(v, dict):
                                 cfg.computers.update(v)
+                            elif k == 'services' and isinstance(v, dict):
+                                cfg.services.update(v)
+                                logger.debug(f"Loaded services config: {cfg.services}")
         except Exception as e:
             logger.warning("Nie można wczytać config.yaml: %s", e)
     else:

@@ -1,146 +1,98 @@
 # PowerControl
 
-Zaawansowany system zarządzania infrastrukturą sieciową z obsługą przekaźników GPIO, hostów sieciowych i wirtualizacji Proxmox.
+Aplikacja do zarządzania zasilaniem i monitorowania urządzeń w sieci – sterowanie przekaźnikami (GPIO na Raspberry Pi), integracja z Proxmox VE, Wake-on-LAN, powiadomienia e-mail oraz prosty interfejs webowy.
 
-## Funkcjonalności
+## Funkcje
 
-- **Zarządzanie przekaźnikami** - Sterowanie przekaźnikami z GPIO w time-realtime
-- **Monitoring hostów** - Śledzenie statusu i dostępności urządzeń w sieci
-- **Integracja Proxmox** - Kontrola maszyn wirtualnych i systemów
-- **Interfejs webowy** - Responsywny dashboard z aktualizacjami live
-- **Powiadomienia email** - Automatyczne alerty o zmianach statusu
-- **Heartbeat monitoring** - Kontrola zdrowia aplikacji
+- **Przekaźniki (GPIO)** – sterowanie zasilaniem urządzeń przez Raspberry Pi (gpiozero)
+- **Proxmox VE** – sprawdzanie stanu węzłów i maszyn wirtualnych, szybki start VM z przypisaniem do przekaźników
+- **Wake-on-LAN** – budzenie komputerów w sieci
+- **Monitor (heartbeat)** – okresowy zapis stanu, powiadomienia o starcie/zatrzymaniu aplikacji
+- **E-mail** – powiadomienia o zdarzeniach (start, shutdown, zdarzenia przekaźników)
+- **Interfejs webowy** – zarządzanie przekaźnikami, lista VM, status komputerów
 
 ## Wymagania
 
-- Python 3.8+
-- Flask
-- PyYAML
-- Proxmoxer
-- Paramiko
-- WakeOnLan
-- gpiozero (opcjonalnie, tylko dla GPIO)
+- Python 3.10+
+- Raspberry Pi (dla GPIO) lub uruchomienie bez sprzętu (moduły relay/switch będą opcjonalne)
+- Opcjonalnie: serwer Proxmox VE, konfiguracja SMTP do e-maili
 
 ## Instalacja
 
-### Szybki start
+### 1. Klonowanie repozytorium
 
 ```bash
-# 1. Klonuj repozytorium
-git clone https://github.com/yourusername/PowerControl.git
-cd PowerControl
+git clone https://github.com/TWOJ_USER/repo-name.git
+cd powerControl
+```
 
-# 2. Utwórz wirtualne środowisko
+### 2. Środowisko wirtualne i zależności
+
+```bash
 python3 -m venv venv
-source venv/bin/activate  # Linux/Mac
-# lub
-venv\Scripts\activate  # Windows
+source venv/bin/activate   # Linux/macOS
+# venv\Scripts\activate   # Windows
 
-# 3. Zainstaluj zależności
 pip install -r requirements.txt
+```
 
-# 4. Skopiuj i edytuj konfigurację
+### 3. Konfiguracja
+
+Skopiuj plik przykładowy i uzupełnij własnymi danymi:
+
+```bash
 cp config.example.yaml config.yaml
-nano config.yaml
-
-# 5. Uruchom aplikację
-python3 main.py
+# Edytuj config.yaml – adresy IP, hasła, tokeny Proxmox, ustawienia e-mail itd.
 ```
 
-### Bardziej szczegółowe instrukcje
+**Ważne:** Plik `config.yaml` nie jest commitowany do repozytorium (zawiera hasła i dane wrażliwe). Użyj `config.example.yaml` jako szablonu.
 
-Dla szczegółowych instrukcji instalacji i konfiguracji, zobacz [INSTALLATION.md](docs/INSTALLATION.md).
+Wybrane wartości można nadpisać zmiennymi środowiskowymi w formacie `POWERCONTROL__SEKCJA__KLUCZ`, np.:
 
-## Konfiguracja
+- `POWERCONTROL__EMAIL__PASSWORD` – hasło do skrzynki e-mail
+- `POWERCONTROL__PROXMOX__TOKEN_VALUE` – token API Proxmox
 
-Aplikacja wymaga pliku `config.yaml`. Przykład zawiera wszystkie wymagane opcje:
+### 4. Uruchomienie
 
-```yaml
-web:
-  host: "0.0.0.0"
-  port: 5000
-  debug: false
-
-email:
-  enabled: true
-  server: "smtp.gmail.com"
-  port: 465
-  from_addr: "your-email@gmail.com"
-  password: "your-app-password"
-  to_addrs:
-    - "recipient@example.com"
-
-relay_pins:
-  - 17
-  - 27
-
-proxmox:
-  host: "192.168.1.10"
-  user: "root@pam"
-  password: "your-password"
-
-monitor:
-  enabled: true
-  heartbeat_interval: 30
+```bash
+python main.py
 ```
 
-Pełny przewodnik konfiguracji: [CONFIGURATION.md](docs/CONFIGURATION.md)
+Aplikacja uruchomi serwer HTTP (domyślnie port 5000). Otwórz w przeglądarce adres podany w konfiguracji (np. `http://localhost:5000`).
 
-## Użytkowanie
+## Uruchomienie jako usługa systemd (Linux)
 
-Po uruchomieniu aplikacja będzie dostępna pod adresem:
-
+```bash
+sudo cp service/powerControl.service /etc/systemd/system/
+# Dostosuj ścieżki w pliku .service jeśli potrzeba (WorkingDirectory, ExecStart)
+sudo systemctl daemon-reload
+sudo systemctl enable powerControl
+sudo systemctl start powerControl
+sudo systemctl status powerControl
 ```
-http://localhost:5000
-```
-
-### Funkcje dashboardu
-
-- **Sekcja Przekaźników** - Włączanie/wyłączanie przekaźników i zarządzanie powiadomieniami
-- **Sekcja Hostów** - Wyświetlanie statusu urządzeń w sieci
-- **Sekcja Proxmox** - Monitoring maszyn wirtualnych i hostów hypervisora
 
 ## Struktura projektu
 
 ```
-PowerControl/
-├── main.py                    # Główny punkt wejścia
-├── requirements.txt           # Zależności
-├── config.example.yaml        # Przykładowa konfiguracja
+powerControl/
+├── main.py              # Punkt wejścia, lifecycle aplikacji
+├── config.yaml          # Twoja konfiguracja (nie w repo – tworzona z config.example.yaml)
+├── config.example.yaml  # Szablon konfiguracji
+├── requirements.txt
 ├── app/
-│   ├── config.py             # Moduł konfiguracji
-│   ├── logger.py             # System logowania
-│   ├── web.py                # Aplikacja Flask
-│   ├── emailer.py            # Wysyłanie emaili
-│   ├── relay.py              # Kontrola GPIO
-│   ├── monitor.py            # Monitoring
-│   └── proxmox.py            # API Proxmox
-├── templates/
-│   └── index.html            # Interfejs webowy
-├── static/
-│   └── favicon.png           # Ikona
-└── docs/                      # Dokumentacja
+│   ├── config.py        # Ładowanie config.yaml i zmiennych środowiskowych
+│   ├── web.py           # Aplikacja Flask, interfejs webowy
+│   ├── relay.py         # Sterowanie przekaźnikami GPIO
+│   ├── proxmox.py       # Integracja z Proxmox API
+│   ├── monitor.py       # Heartbeat, powiadomienia start/shutdown
+│   ├── emailer.py       # Wysyłka e-maili
+│   └── logger.py
+├── templates/           # Szablony HTML
+├── static/              # Pliki statyczne (favicon itd.)
+├── service/             # Unit systemd
+└── logs/                # Katalog na logi (tworzony przy pierwszym uruchomieniu)
 ```
 
 ## Licencja
 
-Projekt jest dostępny na licencji [MIT](LICENSE).
-
-## Wkład
-
-Aby wnieść wkład w projekt:
-
-1. Forkuj repozytorium
-2. Utwórz gałąź dla swojej funkcji (`git checkout -b feature/AmazingFeature`)
-3. Zatwierdź zmiany (`git commit -m 'Add AmazingFeature'`)
-4. Wypchnij do gałęzi (`git push origin feature/AmazingFeature`)
-5. Otwórz Pull Request
-
-## Wsparcie
-
-Jeśli masz pytania lub problemy, otwórz issue na GitHubie.
-
----
-
-**Status:** Funkcjonalny (wersja alpha)  
-**Ostatnia aktualizacja:** 2025-11-15
+Możesz dodać plik LICENSE (np. MIT, GPL) zgodnie z wyborem licencji projektu.
